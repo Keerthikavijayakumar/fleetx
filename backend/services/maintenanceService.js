@@ -1,4 +1,5 @@
 const Maintenance = require('../models/Maintenance');
+const Truck = require('../models/Truck');
 
 class MaintenanceService {
     async getAllRecords() {
@@ -13,12 +14,33 @@ class MaintenanceService {
 
     async createRecord(data) {
         const record = new Maintenance(data);
-        return record.save();
+        await record.save();
+
+        if (data.status === 'completed') {
+            const truck = await Truck.findById(data.truckId);
+            if (truck) {
+                truck.lastServiceDate = Date.now();
+                truck.lastServiceDistance = truck.totalDistance || 0;
+                await truck.save();
+            }
+        }
+
+        return record;
     }
 
     async updateRecord(id, data) {
         const record = await Maintenance.findByIdAndUpdate(id, data, { new: true, runValidators: true });
         if (!record) throw Object.assign(new Error('Maintenance record not found'), { status: 404 });
+
+        if (data.status === 'completed') {
+            const truck = await Truck.findById(record.truckId);
+            if (truck) {
+                truck.lastServiceDate = Date.now();
+                truck.lastServiceDistance = truck.totalDistance || 0;
+                await truck.save();
+            }
+        }
+
         return record;
     }
 

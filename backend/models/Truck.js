@@ -70,6 +70,21 @@ const truckSchema = new mongoose.Schema({
         enum: ['running', 'idle', 'off'],
         default: 'off',
     },
+    totalDistance: {
+        type: Number,
+        default: 0,
+        min: 0,
+        comment: 'Kilometers',
+    },
+    lastServiceDate: {
+        type: Date,
+        default: Date.now,
+    },
+    lastServiceDistance: {
+        type: Number,
+        default: 0,
+        min: 0,
+    },
     createdAt: {
         type: Date,
         default: Date.now,

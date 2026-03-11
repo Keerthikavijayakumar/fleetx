@@ -1,63 +1,94 @@
 import { NavLink } from 'react-router-dom';
-import { HiOutlineViewGrid, HiOutlineLocationMarker, HiOutlineTruck, HiOutlineMap, HiOutlineKey, HiOutlineChartBar, HiOutlineCog } from 'react-icons/hi';
+import { useAuth } from '../context/AuthContext';
+import {
+    HiOutlineViewGrid, HiOutlineLocationMarker, HiOutlineTruck,
+    HiOutlineMap, HiOutlineKey, HiOutlineChartBar, HiOutlineCog,
+    HiOutlineChevronLeft, HiOutlineChevronRight,
+} from 'react-icons/hi';
 
-const navItems = [
-    { path: '/', icon: HiOutlineViewGrid, label: 'Overview' },
-    { path: '/live-tracking', icon: HiOutlineLocationMarker, label: 'Live Tracking' },
-    { path: '/fleet', icon: HiOutlineTruck, label: 'Fleet Management' },
-    { path: '/route-planner', icon: HiOutlineMap, label: 'Route Planner' },
-    { path: '/maintenance', icon: HiOutlineKey, label: 'Maintenance' },
-    { path: '/analytics', icon: HiOutlineChartBar, label: 'Data Analytics' },
-    { path: '/settings', icon: HiOutlineCog, label: 'Settings' },
+const allNavItems = [
+    { path: '/', icon: HiOutlineViewGrid, label: 'Overview', roles: ['admin', 'manager'] },
+    { path: '/live-tracking', icon: HiOutlineLocationMarker, label: 'Live Tracking', roles: ['admin', 'manager'] },
+    { path: '/fleet', icon: HiOutlineTruck, label: 'Fleet', roles: ['admin'] },
+    { path: '/route-planner', icon: HiOutlineMap, label: 'Routes', roles: ['admin'] },
+    { path: '/maintenance', icon: HiOutlineKey, label: 'Maintenance', roles: ['admin'] },
+    { path: '/analytics', icon: HiOutlineChartBar, label: 'Analytics', roles: ['admin', 'manager'] },
+    { path: '/my-truck', icon: HiOutlineTruck, label: 'My Truck', roles: ['driver'] },
+    { path: '/driver-analysis', icon: HiOutlineChartBar, label: 'Analysis', roles: ['driver'] },
+    { path: '/settings', icon: HiOutlineCog, label: 'Settings', roles: ['admin'] },
 ];
 
-const Sidebar = () => {
+const Sidebar = ({ collapsed, onToggle }) => {
+    const { user } = useAuth();
+    const role = user?.role || 'manager';
+    const navItems = allNavItems.filter(item => item.roles.includes(role));
+
     return (
-        <aside className="fixed left-0 top-0 h-screen w-64 bg-[#0d0d0d] border-r border-[rgba(255,255,255,0.06)] flex flex-col z-50">
+        <aside className="sidebar bg-white border-r border-gray-100 flex flex-col z-50 transition-all duration-300 ease-in-out overflow-y-auto">
             {/* Logo */}
-            <div className="p-6 border-b border-[rgba(255,255,255,0.06)]">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center">
-                        <HiOutlineTruck className="text-white text-xl" />
+            <div className="h-16 flex items-center px-4 border-b border-gray-50">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-red-500/15">
+                        <HiOutlineTruck className="text-white text-[17px]" />
                     </div>
-                    <div>
-                        <h1 className="text-lg font-bold gradient-text">FleetX</h1>
-                        <p className="text-[11px] text-gray-500">Logistics Platform</p>
-                    </div>
+                    {!collapsed && (
+                        <div className="animate-slide-right">
+                            <h1 className="text-[15px] font-extrabold text-gray-900 leading-none tracking-tight">FleetX</h1>
+                            <p className="text-[10px] text-gray-400 font-medium mt-0.5">Logistics</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-4 px-3 overflow-y-auto">
+            <nav className="flex-1 py-4 px-2.5 overflow-y-auto">
+                {!collapsed && <p className="text-[10px] font-bold text-gray-300 uppercase tracking-widest mb-3 px-2.5">Menu</p>}
                 <div className="space-y-1">
                     {navItems.map((item) => (
                         <NavLink
                             key={item.path}
                             to={item.path}
                             end={item.path === '/'}
+                            title={collapsed ? item.label : ''}
                             className={({ isActive }) =>
-                                `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${isActive
-                                    ? 'bg-gradient-to-r from-red-600/20 to-transparent text-red-400 border-l-2 border-red-500'
-                                    : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                                `group flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${isActive
+                                    ? 'bg-gradient-to-r from-rose-50 to-red-50 text-rose-600 shadow-sm shadow-rose-500/5'
+                                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
                                 }`
                             }
                         >
-                            <item.icon className="text-lg flex-shrink-0" />
-                            <span>{item.label}</span>
+                            {({ isActive }) => (
+                                <>
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${isActive ? 'bg-rose-100 text-rose-600' : 'text-gray-400 group-hover:text-gray-600'}`}>
+                                        <item.icon className="text-[17px]" />
+                                    </div>
+                                    {!collapsed && <span>{item.label}</span>}
+                                </>
+                            )}
                         </NavLink>
                     ))}
                 </div>
             </nav>
 
-            {/* Bottom */}
-            <div className="p-4 border-t border-[rgba(255,255,255,0.06)]">
-                <div className="glass-card p-3 rounded-xl">
-                    <p className="text-xs text-gray-500 mb-1">System Status</p>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                        <span className="text-xs text-green-400">All systems operational</span>
+            {/* User + Toggle */}
+            <div className="p-3 border-t border-gray-50">
+                {!collapsed && user && (
+                    <div className="flex items-center gap-2.5 mb-3 px-1">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            {user.username?.charAt(0)?.toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold text-gray-800 truncate">{user.username}</p>
+                            <p className="text-[10px] text-gray-400 capitalize">{user.role}</p>
+                        </div>
                     </div>
-                </div>
+                )}
+                <button
+                    onClick={onToggle}
+                    className="w-full flex items-center justify-center p-1.5 rounded-lg text-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-colors"
+                >
+                    {collapsed ? <HiOutlineChevronRight /> : <HiOutlineChevronLeft />}
+                </button>
             </div>
         </aside>
     );

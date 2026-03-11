@@ -1,320 +1,346 @@
-import { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { routesAPI, trucksAPI } from '../services/api';
-import { HiOutlineMap, HiOutlineLocationMarker, HiOutlineClock, HiOutlineFire, HiOutlineCurrencyRupee, HiOutlineGlobe, HiOutlineTrash } from 'react-icons/hi';
 import 'leaflet/dist/leaflet.css';
+import { trucksAPI, directionsAPI, routesAPI } from '../services/api';
+import { HiOutlineMap, HiOutlineSwitchHorizontal, HiOutlineTruck } from 'react-icons/hi';
+import polylineUtil from '@mapbox/polyline';
 
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
-
-// Major Indian city coordinates for route calculation
-const CITY_COORDS = {
-    'delhi': [28.6139, 77.2090], 'new delhi': [28.6139, 77.2090],
-    'mumbai': [19.0760, 72.8777], 'bombay': [19.0760, 72.8777],
-    'chennai': [13.0827, 80.2707], 'madras': [13.0827, 80.2707],
-    'kolkata': [22.5726, 88.3639], 'calcutta': [22.5726, 88.3639],
-    'bangalore': [12.9716, 77.5946], 'bengaluru': [12.9716, 77.5946],
-    'hyderabad': [17.3850, 78.4867], 'ahmedabad': [23.0225, 72.5714],
-    'jaipur': [26.9124, 75.7873], 'surat': [21.1702, 72.8311],
-    'pune': [18.5204, 73.8567], 'lucknow': [26.8467, 80.9462],
-    'nagpur': [21.1458, 79.0882], 'bhopal': [23.2599, 77.4126],
-    'chandigarh': [30.7333, 76.7794], 'patna': [25.5941, 85.1376],
-    'kochi': [9.9312, 76.2673], 'coimbatore': [11.0168, 76.9558],
-    'visakhapatnam': [17.6868, 83.2185], 'indore': [22.7196, 75.8577],
-    'vadodara': [22.3072, 73.1812], 'agra': [27.1767, 78.0081],
-    'kanpur': [26.4499, 80.3319], 'varanasi': [25.3176, 82.9739],
-};
-
-const getCityCoords = (cityName) => {
-    return CITY_COORDS[cityName.toLowerCase().trim()] || null;
-};
-
-const calcDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const RouteMapUpdater = ({ sourceCoords, destCoords }) => {
+// Helper component to handle programmatic map moves in Leaflet
+function MapController({ center, bounds }) {
     const map = useMap();
     useEffect(() => {
-        if (sourceCoords && destCoords) {
-            const bounds = L.latLngBounds([sourceCoords, destCoords]);
-            map.fitBounds(bounds, { padding: [50, 50], animate: true });
+        if (bounds) {
+            map.fitBounds(bounds, { padding: [50, 50] });
+        } else if (center) {
+            map.flyTo([center.lat, center.lng], map.getZoom());
         }
-    }, [sourceCoords, destCoords, map]);
+    }, [center, bounds, map]);
     return null;
-};
-
-const getTrafficColor = (level) => {
-    if (level === 'Low') return { text: 'text-green-400', bg: 'bg-green-500/15', dot: 'bg-green-500' };
-    if (level === 'Medium') return { text: 'text-yellow-400', bg: 'bg-yellow-500/15', dot: 'bg-yellow-500' };
-    return { text: 'text-red-400', bg: 'bg-red-500/15', dot: 'bg-red-500' };
-};
+}
 
 const RoutePlanner = () => {
-    const [source, setSource] = useState('');
+    const [origin, setOrigin] = useState('');
+    const [waypoints, setWaypoints] = useState([]);
     const [destination, setDestination] = useState('');
-    const [selectedTruckId, setSelectedTruckId] = useState('');
+    const [leafletPolyline, setLeafletPolyline] = useState([]);
+    const [mapBounds, setMapBounds] = useState(null);
+    const [routeInfo, setRouteInfo] = useState(null);
     const [trucks, setTrucks] = useState([]);
-    const [result, setResult] = useState(null);
-    const [routes, setRoutes] = useState([]);
+    const [selectedTruck, setSelectedTruck] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [sourceCoords, setSourceCoords] = useState(null);
-    const [destCoords, setDestCoords] = useState(null);
+
+    const [center, setCenter] = useState({ lat: 20.5937, lng: 78.9629 }); // Default India
 
     useEffect(() => {
-        trucksAPI.getAll().then(res => setTrucks(res.data)).catch(console.error);
-        routesAPI.getAll().then(res => setRoutes(res.data)).catch(console.error);
+        // Get user location for map center
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    setCenter({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => console.log('Geolocation error:', error)
+            );
+        }
+
+        trucksAPI.getAll().then(res => {
+            setTrucks(res.data);
+            if (res.data.length > 0) setSelectedTruck(res.data[0]);
+        }).catch(console.error);
     }, []);
 
-    const handlePlanRoute = async (e) => {
-        e.preventDefault();
-        setLoading(true);
+    const swapLocations = () => {
+        setOrigin(destination);
+        setDestination(origin);
+    };
+
+    const addWaypoint = () => {
+        setWaypoints([...waypoints, '']);
+    };
+
+    const removeWaypoint = (index) => {
+        const newWaypoints = [...waypoints];
+        newWaypoints.splice(index, 1);
+        setWaypoints(newWaypoints);
+    };
+
+    const updateWaypoint = (index, value) => {
+        const newWaypoints = [...waypoints];
+        newWaypoints[index] = value;
+        setWaypoints(newWaypoints);
+    };
+
+    const calculateRoute = async () => {
+        if (!origin || !destination) return setError('Enter both origin and destination');
+        if (!selectedTruck) return setError('Select a truck');
+        
+        // Filter out empty waypoints
+        const validWaypoints = waypoints.filter(wp => wp.trim() !== '');
+        
         setError('');
-        setResult(null);
-        setSourceCoords(null);
-        setDestCoords(null);
-
-        const sCoords = getCityCoords(source);
-        const dCoords = getCityCoords(destination);
-
-        let distance = undefined;
-        if (sCoords && dCoords) {
-            distance = parseFloat(calcDistance(sCoords[0], sCoords[1], dCoords[0], dCoords[1]).toFixed(1));
-            setSourceCoords(sCoords);
-            setDestCoords(dCoords);
-        }
+        setLoading(true);
 
         try {
-            const res = await routesAPI.plan({
-                source,
+            // Use backend proxy for Routes API v2
+            const res = await directionsAPI.get({
+                origin,
                 destination,
-                truckId: selectedTruckId || undefined,
-                distance,
+                waypoints: validWaypoints
             });
-            setResult(res.data.route);
-            // Refresh routes list
-            routesAPI.getAll().then(r => setRoutes(r.data)).catch(() => { });
+            
+            const data = res.data;
+
+            if (data.status === 'OK' && data.routes?.length > 0) {
+                const route = data.routes[0];
+                const leg = route.legs[0]; // New backend collapses total journey into 1 leg
+                const distanceKm = leg.distance.value / 1000;
+                
+                // Using route.duration and duration_in_traffic from the new API
+                const durationSec = leg.duration.value;
+                const durationInTrafficSec = leg.duration_in_traffic?.value || durationSec;
+
+                // Traffic level
+                let trafficLevel = 'Low';
+                if (durationInTrafficSec > durationSec * 1.4) trafficLevel = 'High';
+                else if (durationInTrafficSec > durationSec * 1.15) trafficLevel = 'Medium';
+
+                // Calculations using selected truck
+                const fuelConsumed = parseFloat((distanceKm / selectedTruck.fuelEfficiency).toFixed(2));
+                const fuelCost = parseFloat((fuelConsumed * selectedTruck.costPerLitre).toFixed(2));
+                const carbonEmission = parseFloat((fuelConsumed * selectedTruck.emissionFactor).toFixed(2));
+
+                setRouteInfo({
+                    origin: leg.start_address,
+                    destination: leg.end_address,
+                    distance: parseFloat(distanceKm.toFixed(1)),
+                    duration: leg.duration.text,
+                    durationInTraffic: leg.duration_in_traffic?.text || leg.duration.text,
+                    trafficLevel,
+                    fuelConsumed,
+                    fuelCost,
+                    carbonEmission,
+                    truckId: selectedTruck.truckId,
+                    optimizedOrder: route.waypoint_order?.length > 0 ? route.waypoint_order : null
+                });
+
+                // Parse polyline returned by backend (OSRM returning GeoJSON or encoded poly)
+                if (route.overview_polyline?.points) {
+                    try {
+                        // Decode Google-style/OSRM-style encoded polyline to LatLng array
+                        const decoded = polylineUtil.decode(route.overview_polyline.points);
+                        setLeafletPolyline(decoded);
+                        
+                        // Calculate bounding box for map fit
+                        if (decoded.length > 0) {
+                            const lats = decoded.map(p => p[0]);
+                            const lngs = decoded.map(p => p[1]);
+                            setMapBounds([
+                                [Math.min(...lats), Math.min(...lngs)],
+                                [Math.max(...lats), Math.max(...lngs)]
+                            ]);
+                        }
+                    } catch(e) { console.error("Polyline decoding failed", e); }
+                }
+
+                // Save route
+                try {
+                    await routesAPI.plan({
+                        source: origin,
+                        destination,
+                        distance: parseFloat(distanceKm.toFixed(1)),
+                        fuelConsumed,
+                        fuelCost,
+                        carbonEmission,
+                        trafficLevel,
+                        duration: leg.duration_in_traffic?.text || leg.duration.text,
+                    });
+                } catch (e) {
+                    console.error('Failed to save route:', e);
+                }
+            } else {
+                setError('No route found');
+            }
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to plan route. Try again.');
+            setError('Route calculation failed: ' + (err.response?.data?.message || err.message));
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
-    const handleDeleteRoute = async (id) => {
-        if (!window.confirm('Delete this route?')) return;
-        try {
-            await routesAPI.delete(id);
-            setRoutes(routes.filter(r => r._id !== id));
-        } catch {
-            alert('Delete failed');
-        }
-    };
+    const trafficColor = routeInfo?.trafficLevel === 'High' ? 'text-red-600 bg-red-50 border-red-200'
+        : routeInfo?.trafficLevel === 'Medium' ? 'text-amber-600 bg-amber-50 border-amber-200'
+            : 'text-green-600 bg-green-50 border-green-200';
 
     return (
         <div className="animate-fade-in">
             <div className="mb-6">
-                <h1 className="text-2xl font-bold text-white">Route Planner</h1>
-                <p className="text-gray-500 text-sm mt-1">Plan optimized routes with fuel, cost & emission analysis</p>
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                    <HiOutlineMap className="text-red-500" /> Route Planner
+                </h1>
+                <p className="text-gray-500 text-sm mt-1">Plan routes with real-time traffic and fuel calculations</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
-                {/* Input Panel */}
-                <div className="glass-card p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                        <HiOutlineMap className="text-red-400" /> Plan Route
-                    </h3>
-                    <form onSubmit={handlePlanRoute} className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* Controls */}
+                <div className="space-y-4">
+                    {/* Truck Selector */}
+                    <div className="card p-4">
+                        <label className="text-xs font-semibold text-gray-600 mb-2 block flex items-center gap-1.5">
+                            <HiOutlineTruck className="text-red-500" /> Select Truck
+                        </label>
+                        <select
+                            value={selectedTruck?._id || ''}
+                            onChange={(e) => setSelectedTruck(trucks.find(t => t._id === e.target.value))}
+                            className="input-field text-sm"
+                        >
+                            <option value="">Select...</option>
+                            {trucks.map(t => (
+                                <option key={t._id} value={t._id}>{t.truckId} — {t.driverName} ({t.fuelEfficiency} km/l)</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Origin / Destination */}
+                    <div className="card p-4 space-y-3">
                         <div>
-                            <label className="text-sm text-gray-400 mb-1 block">Source City</label>
+                            <label className="text-xs font-semibold text-gray-600 mb-1 block">Origin</label>
                             <input
                                 type="text"
-                                placeholder="e.g. Delhi, Mumbai"
-                                value={source}
-                                onChange={(e) => setSource(e.target.value)}
-                                className="input-dark"
-                                required
-                                list="cities"
+                                placeholder="Enter origin city"
+                                value={origin}
+                                onChange={(e) => setOrigin(e.target.value)}
+                                className="input-field text-sm"
                             />
                         </div>
+
+                        <div className="flex justify-center -my-2 relative z-10">
+                            <button onClick={swapLocations} className="p-1.5 rounded-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-500 hover:text-gray-700 transition-colors shadow-sm cursor-pointer" title="Swap">
+                                <HiOutlineSwitchHorizontal className="rotate-90 text-lg" />
+                            </button>
+                        </div>
+                        
+                        {/* Waypoints */}
+                        {waypoints.map((wp, index) => (
+                            <div key={index} className="flex gap-2 items-center">
+                                <div className="flex-1">
+                                    <label className="text-xs font-semibold text-gray-600 mb-1 block">Stop {index + 1}</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Enter intermediate stop"
+                                        value={wp}
+                                        onChange={(e) => updateWaypoint(index, e.target.value)}
+                                        className="input-field text-sm"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => removeWaypoint(index)}
+                                    className="mt-5 p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                                    title="Remove Stop"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        ))}
+                        
+                        <div className="flex justify-center py-1">
+                            <button 
+                                onClick={addWaypoint}
+                                className="text-xs font-bold text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg border border-dashed border-red-300 hover:border-red-400 bg-red-50/50 hover:bg-red-50 transition-colors flex items-center gap-1"
+                            >
+                                + Add Stop
+                            </button>
+                        </div>
+
                         <div>
-                            <label className="text-sm text-gray-400 mb-1 block">Destination City</label>
+                            <label className="text-xs font-semibold text-gray-600 mb-1 block">Destination</label>
                             <input
                                 type="text"
-                                placeholder="e.g. Chennai, Kolkata"
+                                placeholder="Enter destination"
                                 value={destination}
                                 onChange={(e) => setDestination(e.target.value)}
-                                className="input-dark"
-                                required
-                                list="cities"
+                                className="input-field text-sm"
                             />
                         </div>
-                        <datalist id="cities">
-                            {Object.keys(CITY_COORDS).filter(c => c.length > 4).map(c => (
-                                <option key={c} value={c.charAt(0).toUpperCase() + c.slice(1)} />
-                            ))}
-                        </datalist>
-                        <div>
-                            <label className="text-sm text-gray-400 mb-1 block">Select Truck (optional)</label>
-                            <select
-                                value={selectedTruckId}
-                                onChange={(e) => setSelectedTruckId(e.target.value)}
-                                className="input-dark"
-                            >
-                                <option value="">Default truck</option>
-                                {trucks.map(t => (
-                                    <option key={t._id} value={t._id}>{t.truckId} - {t.driverName}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <button type="submit" disabled={loading} className="btn-primary w-full py-3 disabled:opacity-50">
+
+                        <button
+                            onClick={calculateRoute}
+                            disabled={loading || !origin || !destination}
+                            className="btn-primary w-full py-2.5 text-center disabled:opacity-50 text-sm"
+                        >
                             {loading ? 'Calculating...' : 'Calculate Route'}
                         </button>
-                    </form>
 
-                    {error && <div className="mt-4 p-3 rounded-xl bg-red-500/10 text-red-400 text-sm">{error}</div>}
+                        {error && <p className="text-red-600 text-sm">{error}</p>}
+                    </div>
 
                     {/* Results */}
-                    {result && (
-                        <div className="mt-6 space-y-2 animate-fade-in">
-                            <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Route Results</h4>
-                            {[
-                                { icon: HiOutlineLocationMarker, label: 'Distance', value: `${result.distance} km`, color: 'text-blue-400' },
-                                { icon: HiOutlineClock, label: 'Est. Time', value: result.duration, color: 'text-purple-400' },
-                                { icon: HiOutlineFire, label: 'Fuel Consumed', value: `${result.fuelConsumed} L`, color: 'text-blue-400' },
-                                { icon: HiOutlineCurrencyRupee, label: 'Fuel Cost', value: `₹${result.fuelCost?.toLocaleString()}`, color: 'text-yellow-400' },
-                                { icon: HiOutlineGlobe, label: 'CO₂ Emission', value: `${result.carbonEmission} kg`, color: 'text-orange-400' },
-                            ].map(({ icon: Icon, label, value, color }) => (
-                                <div key={label} className="flex justify-between items-center p-3 rounded-xl bg-white/5">
-                                    <span className="text-sm text-gray-400 flex items-center gap-2">
-                                        <Icon className="text-gray-500" /> {label}
-                                    </span>
-                                    <span className={`text-sm font-semibold ${color}`}>{value}</span>
+                    {routeInfo && (
+                        <div className="card p-4 space-y-3 animate-slide-up bg-white border-l-4 border-l-red-500 shadow-lg">
+                            <div className="flex justify-between items-start">
+                                <h3 className="text-sm font-bold text-gray-800">Optimized Route Results</h3>
+                                {routeInfo.optimizedOrder && (
+                                    <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full uppercase tracking-widest">Route Optimized</span>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="p-3 rounded-lg bg-blue-50">
+                                    <p className="text-xs text-blue-600 font-medium">Distance</p>
+                                    <p className="text-lg font-bold text-blue-700">{routeInfo.distance} km</p>
                                 </div>
-                            ))}
-                            <div className={`flex justify-between items-center p-3 rounded-xl ${getTrafficColor(result.trafficLevel).bg}`}>
-                                <span className="text-sm text-gray-400">Traffic Level</span>
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${getTrafficColor(result.trafficLevel).dot}`}></div>
-                                    <span className={`text-sm font-semibold ${getTrafficColor(result.trafficLevel).text}`}>{result.trafficLevel}</span>
+                                <div className="p-3 rounded-lg bg-purple-50">
+                                    <p className="text-xs text-purple-600 font-medium">Duration</p>
+                                    <p className="text-lg font-bold text-purple-700">{routeInfo.duration}</p>
                                 </div>
+                                <div className="p-3 rounded-lg bg-sky-50">
+                                    <p className="text-xs text-sky-600 font-medium">Fuel Consumed</p>
+                                    <p className="text-lg font-bold text-sky-700">{routeInfo.fuelConsumed} L</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-amber-50">
+                                    <p className="text-xs text-amber-600 font-medium">Fuel Cost</p>
+                                    <p className="text-lg font-bold text-amber-700">₹{routeInfo.fuelCost.toLocaleString()}</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-orange-50">
+                                    <p className="text-xs text-orange-600 font-medium">CO₂ Emission</p>
+                                    <p className="text-lg font-bold text-orange-700">{routeInfo.carbonEmission} kg</p>
+                                </div>
+                                <div className={`p-3 rounded-lg border ${trafficColor}`}>
+                                    <p className="text-xs font-medium">Traffic</p>
+                                    <p className="text-lg font-bold">{routeInfo.trafficLevel}</p>
+                                </div>
+                            </div>
+
+                            <div className="text-xs text-gray-500 pt-1">
+                                Truck: <span className="font-semibold text-gray-700">{routeInfo.truckId}</span>
                             </div>
                         </div>
                     )}
                 </div>
 
                 {/* Map */}
-                <div className="lg:col-span-2 glass-card overflow-hidden rounded-2xl" style={{ height: '480px' }}>
+                <div className="lg:col-span-2 card overflow-hidden z-0" style={{ minHeight: '500px' }}>
                     <MapContainer
-                        center={[22.5937, 78.9629]}
+                        center={[center.lat, center.lng]}
                         zoom={5}
+                        scrollWheelZoom={true}
                         style={{ width: '100%', height: '100%' }}
                     >
                         <TileLayer
-                            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-                            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
-                        {sourceCoords && (
-                            <Marker position={sourceCoords}>
-                                <Popup><b style={{ color: '#22c55e' }}>📍 {source}</b></Popup>
-                            </Marker>
+                        <MapController center={center} bounds={mapBounds} />
+                        
+                        {leafletPolyline.length > 0 && (
+                            <Polyline positions={leafletPolyline} color="#3b82f6" weight={5} opacity={0.7} />
                         )}
-                        {destCoords && (
-                            <Marker position={destCoords}>
-                                <Popup><b style={{ color: '#f87171' }}>🏁 {destination}</b></Popup>
-                            </Marker>
-                        )}
-                        {sourceCoords && destCoords && (
-                            <Polyline
-                                positions={[sourceCoords, destCoords]}
-                                pathOptions={{ color: '#dc2626', weight: 4, dashArray: '10 8', opacity: 0.9 }}
-                            />
-                        )}
-                        {!sourceCoords && !destCoords && (
-                            <></>
-                        )}
-                        <RouteMapUpdater sourceCoords={sourceCoords} destCoords={destCoords} />
                     </MapContainer>
-                    {!sourceCoords && !destCoords && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <div className="glass-card p-5 text-center max-w-xs">
-                                <HiOutlineLocationMarker className="text-5xl text-red-400 mx-auto mb-3" />
-                                <p className="text-white text-sm font-medium">Enter Indian cities above</p>
-                                <p className="text-gray-500 text-xs mt-1">The route will appear on the map</p>
-                            </div>
-                        </div>
-                    )}
                 </div>
             </div>
-
-            {/* Route History */}
-            {routes.length > 0 && (
-                <div className="glass-card overflow-hidden">
-                    <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                        <h3 className="text-base font-semibold text-white">Route History</h3>
-                        <span className="text-xs text-gray-500">{routes.length} routes planned</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="table-dark">
-                            <thead>
-                                <tr>
-                                    <th>Route</th>
-                                    <th>Distance</th>
-                                    <th>Duration</th>
-                                    <th>Fuel (L)</th>
-                                    <th>Cost</th>
-                                    <th>CO₂ (kg)</th>
-                                    <th>Traffic</th>
-                                    <th>Truck</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {routes.slice(0, 10).map((route) => (
-                                    <tr key={route._id}>
-                                        <td>
-                                            <span className="text-red-400 font-medium">{route.source}</span>
-                                            <span className="text-gray-600 mx-1">→</span>
-                                            <span className="text-gray-300">{route.destination}</span>
-                                        </td>
-                                        <td>{route.distance} km</td>
-                                        <td>{route.duration}</td>
-                                        <td className="text-blue-400">{route.fuelConsumed}</td>
-                                        <td className="text-yellow-400">₹{route.fuelCost?.toLocaleString()}</td>
-                                        <td className="text-orange-400">{route.carbonEmission}</td>
-                                        <td>
-                                            <span className={`badge text-xs ${route.trafficLevel === 'Low' ? 'badge-success'
-                                                    : route.trafficLevel === 'Medium' ? 'badge-warning'
-                                                        : 'badge-danger'
-                                                }`}>{route.trafficLevel}</span>
-                                        </td>
-                                        <td className="text-gray-400 text-xs">{route.truckId?.truckId || '-'}</td>
-                                        <td>
-                                            <button
-                                                onClick={() => handleDeleteRoute(route._id)}
-                                                className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
-                                            >
-                                                <HiOutlineTrash />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

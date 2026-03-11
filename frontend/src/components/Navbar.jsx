@@ -1,67 +1,58 @@
-import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { HiOutlineBell, HiOutlineLogout, HiOutlineUser } from 'react-icons/hi';
+import { HiOutlineLogout, HiOutlineBell, HiOutlineSearch } from 'react-icons/hi';
 
-const Navbar = () => {
+const roleBadges = {
+    admin: { bg: 'bg-rose-100', text: 'text-rose-700', dot: 'bg-rose-500' },
+    manager: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+    driver: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+};
+
+const Navbar = ({ sidebarCollapsed }) => {
     const { user, logout } = useAuth();
-    const [showNotifications, setShowNotifications] = useState(false);
-
-    const notifications = [
-        { id: 1, text: 'TRK-003 fuel level below 20%', type: 'warning', time: '2 min ago' },
-        { id: 2, text: 'TRK-006 maintenance overdue', type: 'danger', time: '15 min ago' },
-        { id: 3, text: 'New route optimized: Delhi → Mumbai', type: 'info', time: '1 hr ago' },
-    ];
+    const badge = roleBadges[user?.role] || roleBadges.manager;
 
     return (
-        <header className="fixed top-0 left-64 right-0 h-16 bg-[#0d0d0d]/80 backdrop-blur-xl border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between px-6 z-40">
-            <div>
-                <h2 className="text-sm font-medium text-gray-400">Welcome back,</h2>
-                <p className="text-base font-semibold text-white">{user?.username || 'Admin'}</p>
+        <header className="fixed top-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-6 z-40 transition-all duration-300" style={{ left: '240px' }}>
+            {/* Left: search */}
+            <div className="flex items-center gap-3 flex-1 max-w-md">
+                <div className="relative flex-1">
+                    <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 text-lg pointer-events-none" />
+                    <input
+                        type="text"
+                        placeholder="Search trucks, routes..."
+                        className="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-transparent rounded-xl text-sm text-gray-600 placeholder-gray-300 focus:bg-white focus:border-gray-200 focus:outline-none transition-all"
+                    />
+                </div>
             </div>
 
-            <div className="flex items-center gap-4">
-                {/* Notifications */}
-                <div className="relative">
-                    <button
-                        onClick={() => setShowNotifications(!showNotifications)}
-                        className="relative p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-all"
-                    >
-                        <HiOutlineBell className="text-lg text-gray-400" />
-                        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></span>
-                    </button>
+            {/* Right: actions */}
+            <div className="flex items-center gap-2">
+                <button className="relative w-9 h-9 rounded-xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-all">
+                    <HiOutlineBell className="text-lg" />
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center shadow-sm">3</span>
+                </button>
 
-                    {showNotifications && (
-                        <div className="absolute right-0 top-12 w-80 glass-card p-2 animate-fade-in">
-                            <p className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Notifications</p>
-                            {notifications.map((n) => (
-                                <div key={n.id} className="px-3 py-2.5 rounded-lg hover:bg-white/5 cursor-pointer transition-all">
-                                    <p className="text-sm text-gray-300">{n.text}</p>
-                                    <p className="text-xs text-gray-600 mt-1">{n.time}</p>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <div className="w-px h-6 bg-gray-100 mx-1" />
 
-                {/* User */}
-                <div className="flex items-center gap-3 pl-4 border-l border-[rgba(255,255,255,0.1)]">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center">
-                        <HiOutlineUser className="text-white text-sm" />
+                <div className="flex items-center gap-2.5 pl-1">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center text-white text-xs font-bold shadow-sm shadow-red-500/15">
+                        {user?.username?.charAt(0)?.toUpperCase() || 'U'}
                     </div>
                     <div className="hidden sm:block">
-                        <p className="text-sm font-medium text-white">{user?.username}</p>
-                        <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+                        <p className="text-[13px] font-semibold text-gray-800 leading-tight">{user?.username}</p>
+                        <div className="flex items-center gap-1 mt-0.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                            <span className={`text-[10px] font-semibold capitalize ${badge.text}`}>{user?.role}</span>
+                        </div>
                     </div>
+                    <button
+                        onClick={logout}
+                        className="w-8 h-8 rounded-xl hover:bg-red-50 flex items-center justify-center text-gray-300 hover:text-rose-500 transition-all ml-1"
+                        title="Logout"
+                    >
+                        <HiOutlineLogout className="text-lg" />
+                    </button>
                 </div>
-
-                {/* Logout */}
-                <button
-                    onClick={logout}
-                    className="p-2.5 rounded-xl bg-white/5 hover:bg-red-600/20 text-gray-400 hover:text-red-400 transition-all"
-                    title="Logout"
-                >
-                    <HiOutlineLogout className="text-lg" />
-                </button>
             </div>
         </header>
     );

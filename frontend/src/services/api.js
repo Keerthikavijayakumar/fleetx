@@ -71,4 +71,26 @@ export const analyticsAPI = {
     }),
 };
 
+// Directions (Google Maps Routes v2 proxy)
+export const directionsAPI = {
+    get: (data) => api.post('/directions', data),
+};
+
+// Location (Driver GPS)
+export const locationAPI = {
+    update: (data) => api.post('/location/update', data),
+};
+
+// Driver API (Geolocation)
+export const driverAPI = {
+    locationUpdate: (data) => api.post('/driver/location', data),
+};
+
+// Emergency API
+export const emergencyAPI = {
+    triggerAlert: (data) => api.post('/emergency', data),
+    getAlerts: () => api.get('/emergency'),
+    resolveAlert: (id) => api.patch(`/emergency/${id}`),
+};
+
 export default api;

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
+const TruckAnalytics = require('../models/TruckAnalytics');
 
 class AnalyticsService {
     parseCSV(filePath) {
@@ -14,8 +15,36 @@ class AnalyticsService {
         });
     }
 
+    async insertAnalyticsData(data) {
+        const docs = data.map(row => ({
+            date: new Date(row.date),
+            truckId: row.truck_id || row.truckId || '',
+            distanceKm: parseFloat(row.distance_km || 0),
+            fuelUsedLiters: parseFloat(row.fuel_used_liters || 0),
+            costRs: parseFloat(row.cost_rs || 0),
+            co2Kg: parseFloat(row.co2_kg || 0),
+            deliveryTimeMin: parseFloat(row.delivery_time_min || 0),
+        }));
+        await TruckAnalytics.insertMany(docs);
+        return docs.length;
+    }
+
     async getFuelConsumptionData(data = null) {
         if (!data) {
+            // Try MongoDB first
+            const dbData = await TruckAnalytics.find().sort({ date: 1 }).lean();
+            if (dbData.length > 0) {
+                const monthlyFuel = {};
+                dbData.forEach(row => {
+                    const month = row.date.toISOString().substring(0, 7);
+                    if (!monthlyFuel[month]) monthlyFuel[month] = 0;
+                    monthlyFuel[month] += row.fuelUsedLiters;
+                });
+                return Object.entries(monthlyFuel).map(([month, total]) => ({
+                    month, fuelConsumed: parseFloat(total.toFixed(2)),
+                }));
+            }
+            // Fallback to CSV
             const filePath = path.join(__dirname, '..', 'data', 'trucks_data.csv');
             if (fs.existsSync(filePath)) {
                 data = await this.parseCSV(filePath);
@@ -28,17 +57,28 @@ class AnalyticsService {
         data.forEach((row) => {
             const month = row.date ? row.date.substring(0, 7) : 'Unknown';
             if (!monthlyFuel[month]) monthlyFuel[month] = 0;
-            monthlyFuel[month] += parseFloat(row.fuel_used_liters || 0);
+            monthlyFuel[month] += parseFloat(row.fuel_used_liters || row.fuelUsedLiters || 0);
         });
 
         return Object.entries(monthlyFuel).map(([month, total]) => ({
-            month,
-            fuelConsumed: parseFloat(total.toFixed(2)),
+            month, fuelConsumed: parseFloat(total.toFixed(2)),
         }));
     }
 
     async getMaintenanceCostData(data = null) {
         if (!data) {
+            const dbData = await TruckAnalytics.find().sort({ date: 1 }).lean();
+            if (dbData.length > 0) {
+                const monthlyCost = {};
+                dbData.forEach(row => {
+                    const month = row.date.toISOString().substring(0, 7);
+                    if (!monthlyCost[month]) monthlyCost[month] = 0;
+                    monthlyCost[month] += row.costRs;
+                });
+                return Object.entries(monthlyCost).map(([month, cost]) => ({
+                    month, cost: parseFloat(cost.toFixed(2)),
+                }));
+            }
             data = this.generateSampleMaintenanceData();
         }
 
@@ -50,13 +90,24 @@ class AnalyticsService {
         });
 
         return Object.entries(monthlyCost).map(([month, cost]) => ({
-            month,
-            cost: parseFloat(cost.toFixed(2)),
+            month, cost: parseFloat(cost.toFixed(2)),
         }));
     }
 
     async getCO2EmissionsData(data = null) {
         if (!data) {
+            const dbData = await TruckAnalytics.find().sort({ date: 1 }).lean();
+            if (dbData.length > 0) {
+                const monthlyCO2 = {};
+                dbData.forEach(row => {
+                    const month = row.date.toISOString().substring(0, 7);
+                    if (!monthlyCO2[month]) monthlyCO2[month] = 0;
+                    monthlyCO2[month] += row.co2Kg;
+                });
+                return Object.entries(monthlyCO2).map(([month, co2]) => ({
+                    month, co2: parseFloat(co2.toFixed(2)),
+                }));
+            }
             const filePath = path.join(__dirname, '..', 'data', 'trucks_data.csv');
             if (fs.existsSync(filePath)) {
                 data = await this.parseCSV(filePath);
@@ -69,17 +120,30 @@ class AnalyticsService {
         data.forEach((row) => {
             const month = row.date ? row.date.substring(0, 7) : 'Unknown';
             if (!monthlyCO2[month]) monthlyCO2[month] = 0;
-            monthlyCO2[month] += parseFloat(row.co2_kg || 0);
+            monthlyCO2[month] += parseFloat(row.co2_kg || row.co2Kg || 0);
         });
 
         return Object.entries(monthlyCO2).map(([month, co2]) => ({
-            month,
-            co2: parseFloat(co2.toFixed(2)),
+            month, co2: parseFloat(co2.toFixed(2)),
         }));
     }
 
     async getDeliveryTimeData(data = null) {
         if (!data) {
+            const dbData = await TruckAnalytics.find().sort({ date: 1 }).lean();
+            if (dbData.length > 0) {
+                const monthlyTime = {};
+                const monthlyCount = {};
+                dbData.forEach(row => {
+                    const month = row.date.toISOString().substring(0, 7);
+                    if (!monthlyTime[month]) { monthlyTime[month] = 0; monthlyCount[month] = 0; }
+                    monthlyTime[month] += row.deliveryTimeMin;
+                    monthlyCount[month] += 1;
+                });
+                return Object.entries(monthlyTime).map(([month, total]) => ({
+                    month, avgDeliveryTime: parseFloat((total / (monthlyCount[month] || 1)).toFixed(2)),
+                }));
+            }
             const filePath = path.join(__dirname, '..', 'data', 'trucks_data.csv');
             if (fs.existsSync(filePath)) {
                 data = await this.parseCSV(filePath);
@@ -93,33 +157,23 @@ class AnalyticsService {
         data.forEach((row) => {
             const month = row.date ? row.date.substring(0, 7) : 'Unknown';
             if (!monthlyTime[month]) { monthlyTime[month] = 0; monthlyCount[month] = 0; }
-            monthlyTime[month] += parseFloat(row.delivery_time_min || 0);
+            monthlyTime[month] += parseFloat(row.delivery_time_min || row.deliveryTimeMin || 0);
             monthlyCount[month] += 1;
         });
 
         return Object.entries(monthlyTime).map(([month, total]) => ({
-            month,
-            avgDeliveryTime: parseFloat((total / (monthlyCount[month] || 1)).toFixed(2)),
+            month, avgDeliveryTime: parseFloat((total / (monthlyCount[month] || 1)).toFixed(2)),
         }));
     }
 
-    async getTrafficImpactData(data = null) {
-        if (!data) {
-            const filePath = path.join(__dirname, '..', 'data', 'traffic_data.csv');
-            if (fs.existsSync(filePath)) {
-                data = await this.parseCSV(filePath);
-            } else {
-                data = this.generateSampleTrafficData();
-            }
-        }
-
-        const trafficCounts = { Low: 0, Medium: 0, High: 0 };
-        data.forEach((row) => {
-            const level = row.congestion_level || 'Low';
-            if (trafficCounts[level] !== undefined) trafficCounts[level] += 1;
-        });
-
-        return Object.entries(trafficCounts).map(([name, value]) => ({ name, value }));
+    async getTrafficImpactData() {
+        // Dynamic traffic — returns sample distribution
+        // Real traffic is computed per-route in RoutePlanner via Directions API
+        return [
+            { name: 'Low', value: 45 },
+            { name: 'Medium', value: 35 },
+            { name: 'High', value: 20 },
+        ];
     }
 
     async getDashboardStats() {
@@ -158,15 +212,6 @@ class AnalyticsService {
         months.forEach((month) => {
             data.push({ month, cost: (Math.random() * 50000 + 10000).toFixed(2) });
         });
-        return data;
-    }
-
-    generateSampleTrafficData() {
-        const data = [];
-        const levels = ['Low', 'Medium', 'High'];
-        for (let i = 0; i < 50; i++) {
-            data.push({ congestion_level: levels[Math.floor(Math.random() * 3)] });
-        }
         return data;
     }
 }

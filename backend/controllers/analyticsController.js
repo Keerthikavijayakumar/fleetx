@@ -91,21 +91,21 @@ exports.uploadCSV = async (req, res, next) => {
         const data = await analyticsService.parseCSV(req.file.path);
         const type = req.body.type || 'trucks';
 
-        let result;
         if (type === 'trucks') {
-            result = {
-                fuelConsumption: await analyticsService.getFuelConsumptionData(data),
-                co2Emissions: await analyticsService.getCO2EmissionsData(data),
-                deliveryTime: await analyticsService.getDeliveryTimeData(data),
-                maintenanceCost: await analyticsService.getMaintenanceCostData(data),
+            // Insert into MongoDB truck_analytics collection
+            const count = await analyticsService.insertAnalyticsData(data);
+            
+            // Return updated chart data
+            const result = {
+                fuelConsumption: await analyticsService.getFuelConsumptionData(),
+                co2Emissions: await analyticsService.getCO2EmissionsData(),
+                deliveryTime: await analyticsService.getDeliveryTimeData(),
+                maintenanceCost: await analyticsService.getMaintenanceCostData(),
             };
-        } else if (type === 'traffic') {
-            result = {
-                trafficImpact: await analyticsService.getTrafficImpactData(data),
-            };
+            res.json({ message: `CSV processed: ${count} records inserted into database`, data: result });
+        } else {
+            res.json({ message: 'CSV processed successfully', data: {} });
         }
-
-        res.json({ message: 'CSV processed successfully', data: result });
     } catch (error) {
         next(error);
     }

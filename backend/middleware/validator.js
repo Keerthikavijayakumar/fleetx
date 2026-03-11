@@ -15,7 +15,7 @@ const validateRegister = [
     body('username').trim().isLength({ min: 3, max: 30 }).withMessage('Username must be 3-30 characters'),
     body('email').isEmail().normalizeEmail().withMessage('Please enter a valid email'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    body('role').optional().isIn(['admin', 'manager']).withMessage('Role must be admin or manager'),
+    body('role').optional().isIn(['admin', 'manager', 'driver']).withMessage('Role must be admin, manager, or driver'),
     handleValidationErrors,
 ];
 

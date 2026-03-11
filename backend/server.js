@@ -13,6 +13,9 @@ const truckRoutes = require('./routes/truckRoutes');
 const routeRoutes = require('./routes/routeRoutes');
 const maintenanceRoutes = require('./routes/maintenanceRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const directionsRoutes = require('./routes/directionsRoutes');
+const { router: locationRoutes, setIO: setLocationIO } = require('./routes/locationRoutes');
+const { router: driverRoutes, setIO: setDriverIO } = require('./routes/driverRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +26,10 @@ const io = new Server(server, {
         methods: ['GET', 'POST'],
     },
 });
+
+// Pass io to location routes
+setLocationIO(io);
+setDriverIO(io);
 
 // Middleware
 app.use(cors({
@@ -35,10 +42,14 @@ app.use('/api', apiLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/trucks', truckRoutes);
+app.use('/api/trucks', require('./routes/truckRoutes')(io));
 app.use('/api/routes', routeRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/directions', directionsRoutes);
+app.use('/api/location', locationRoutes);
+app.use('/api/driver', driverRoutes);
+app.use('/api/emergency', require('./routes/emergencyRoutes')(io));
 
 // Health check
 app.get('/api/health', (req, res) => {
