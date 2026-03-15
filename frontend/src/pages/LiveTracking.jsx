@@ -32,7 +32,7 @@ const getTruckIcon = (status) => {
         html: `
             <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 32 32">
                 <circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/>
-                <text x="16" y="20" text-anchor="middle" fill="white" font-size="14" font-weight="bold">🚛</text>
+                <text x="16" y="20" text-anchor="middle" fill="white" font-size="11" font-weight="bold">TRK</text>
             </svg>
         `,
         iconSize: [36, 36],
@@ -59,7 +59,7 @@ const LiveTracking = () => {
 
     useEffect(() => {
         if (!isDriver) {
-            // Admin / Manager View: Fetch all trucks
+            // Admin view: fetch all trucks
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     (position) => setCenter({ lat: position.coords.latitude, lng: position.coords.longitude }),
@@ -191,7 +191,7 @@ const LiveTracking = () => {
         return <Navigate to="/my-truck" replace />;
     }
 
-    // Admin / Manager View
+    // Admin view
     const activeTrucks = trucks.filter(t => t.latitude && t.longitude);
 
     return (
@@ -223,9 +223,9 @@ const LiveTracking = () => {
                             <p className="text-xs text-gray-500 mb-2">{truck.driverName}</p>
                             <div className="flex items-center gap-3 text-xs">
                                 <span className="text-blue-600 font-medium">{truck.speed} km/h</span>
-                                <span className={`font-medium ${truck.fuelLevel > 50 ? 'text-green-600' : truck.fuelLevel > 20 ? 'text-amber-600' : 'text-red-600'}`}>
-                                    ⛽ {truck.fuelLevel?.toFixed(0)}%
-                                </span>
+                                    <span className={`font-medium ${truck.fuelLevel > 50 ? 'text-green-600' : truck.fuelLevel > 20 ? 'text-amber-600' : 'text-red-600'}`}>
+                                        Fuel {truck.fuelLevel?.toFixed(0)}%
+                                    </span>
                             </div>
                         </div>
                     ))}

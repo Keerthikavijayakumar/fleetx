@@ -35,3 +35,12 @@ exports.deleteRoute = async (req, res, next) => {
         next(error);
     }
 };
+
+exports.updateRoute = async (req, res, next) => {
+    try {
+        const route = await routeService.updateRoute(req.params.id, req.body);
+        res.json({ message: 'Route updated successfully', route });
+    } catch (error) {
+        next(error);
+    }
+};

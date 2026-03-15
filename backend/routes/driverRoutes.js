@@ -8,20 +8,6 @@ const { auth } = require('../middleware/auth');
 // Store io instance
 let ioInstance = null;
 
-// Helper to calculate distance between two coordinates in km (Haversine formula)
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    if (lat1 === lat2 && lon1 === lon2) return 0;
-    const R = 6371; // Radius of the earth in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-        Math.sin(dLon / 2) * Math.sin(dLon / 2); 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
-    return R * c; // Distance in km
-};
-
 const setIO = (io) => {
     ioInstance = io;
 };
@@ -57,15 +43,6 @@ router.post('/location', auth, async (req, res, next) => {
                 throw Object.assign(new Error('Truck not found'), { status: 404 });
             }
 
-            // Calculate distance if truck already has valid coordinates and has moved
-            if (truck.latitude && truck.longitude && (truck.latitude !== latitude || truck.longitude !== longitude)) {
-                const distanceKm = calculateDistance(truck.latitude, truck.longitude, latitude, longitude);
-                // Sanity check: cap unrealistic GPS jumps (e.g. > 100km in a single ping)
-                if (distanceKm > 0 && distanceKm < 100) {
-                    truck.totalDistance = (truck.totalDistance || 0) + distanceKm;
-                }
-            }
-
             truck.latitude = latitude;
             truck.longitude = longitude;
             if (speed != null) truck.speed = speed;
@@ -87,24 +64,12 @@ router.post('/location', auth, async (req, res, next) => {
                 fuelLevel: safeNum(t.fuelLevel, 1),
                 engineStatus: t.engineStatus,
                 licensePlate: t.licensePlate,
-                totalDistance: safeNum(t.totalDistance, 2),
-                lastServiceDate: t.lastServiceDate,
-                lastServiceDistance: safeNum(t.lastServiceDistance, 2),
             }));
             ioInstance.emit('truckUpdate', updates);
         }
 
         const truck = await Truck.findOne({ truckId });
-        res.json({ 
-            message: 'Location updated and stored', 
-            truck: { 
-                truckId: truck.truckId, 
-                latitude: truck.latitude, 
-                longitude: truck.longitude, 
-                speed: truck.speed,
-                totalDistance: safeNum(truck.totalDistance, 2)
-            } 
-        });
+        res.json({ message: 'Location updated and stored', truck: { truckId: truck.truckId, latitude: truck.latitude, longitude: truck.longitude, speed: truck.speed } });
     } catch (error) {
         next(error);
     } finally {

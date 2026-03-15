@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { trucksAPI } from '../services/api';
+import { routesAPI, trucksAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { io } from 'socket.io-client';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineTruck, HiOutlineX, HiOutlineExclamationCircle } from 'react-icons/hi';
+import { getTruckDistanceSinceServiceKm, getTruckTotalDistanceKmFromRoutes } from '../utils/truckDistance';
 
 const FleetManagement = () => {
     const { user } = useAuth();
     const isAdmin = user?.role === 'admin';
     const [trucks, setTrucks] = useState([]);
+    const [routes, setRoutes] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [editingTruck, setEditingTruck] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -39,8 +41,9 @@ const FleetManagement = () => {
 
     const fetchTrucks = async () => {
         try {
-            const res = await trucksAPI.getAll();
-            setTrucks(res.data);
+            const [trucksRes, routesRes] = await Promise.all([trucksAPI.getAll(), routesAPI.getAll()]);
+            setTrucks(trucksRes.data);
+            setRoutes(Array.isArray(routesRes.data) ? routesRes.data : []);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -115,7 +118,8 @@ const FleetManagement = () => {
                                 <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-8 text-gray-400">No trucks found. Add your first truck.</td></tr>
                             ) : (
                                 trucks.map((truck) => {
-                                    const distanceDriven = Math.max(0, (truck.totalDistance || 0) - (truck.lastServiceDistance || 0));
+                                    const totalDistance = getTruckTotalDistanceKmFromRoutes(truck, routes);
+                                    const distanceDriven = getTruckDistanceSinceServiceKm(truck, routes);
                                     const dateLast = truck.lastServiceDate ? new Date(truck.lastServiceDate) : new Date(truck.createdAt || Date.now());
                                     const daysSince = Math.floor((Date.now() - dateLast.getTime()) / (1000 * 60 * 60 * 24));
                                     const needsMaintenance = distanceDriven > 10000 || daysSince > 120;
@@ -129,7 +133,7 @@ const FleetManagement = () => {
                                             <td>{truck.tankCapacity}</td>
                                             <td>₹{truck.costPerLitre}</td>
                                             <td>{truck.emissionFactor}</td>
-                                            <td>{Math.round(truck.totalDistance || 0).toLocaleString()} km</td>
+                                            <td>{Math.round(totalDistance).toLocaleString()} km</td>
                                             <td>
                                                 <div className="flex items-center gap-2">
                                                     <span className={`badge ${truck.status === 'active' ? 'badge-success' : truck.status === 'maintenance' ? 'badge-warning' : 'badge-danger'}`}>

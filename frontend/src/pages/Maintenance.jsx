@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { maintenanceAPI, trucksAPI } from '../services/api';
+import { maintenanceAPI, routesAPI, trucksAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineExclamation, HiOutlineX, HiOutlineInformationCircle, HiOutlineClock, HiOutlineMap, HiOutlineCog } from 'react-icons/hi';
+import { getTruckDistanceSinceServiceKm } from '../utils/truckDistance';
 
 import { io } from 'socket.io-client';
 
@@ -10,6 +11,7 @@ const Maintenance = () => {
     const isAdmin = user?.role === 'admin';
     const [records, setRecords] = useState([]);
     const [trucks, setTrucks] = useState([]);
+    const [routes, setRoutes] = useState([]);
     const [overdueRecords, setOverdueRecords] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
@@ -43,12 +45,13 @@ const Maintenance = () => {
 
     const fetchData = async () => {
         try {
-            const [recRes, truckRes, overdueRes] = await Promise.all([
-                maintenanceAPI.getAll(), trucksAPI.getAll(), maintenanceAPI.getOverdue(),
+            const [recRes, truckRes, overdueRes, routesRes] = await Promise.all([
+                maintenanceAPI.getAll(), trucksAPI.getAll(), maintenanceAPI.getOverdue(), routesAPI.getAll(),
             ]);
             setRecords(recRes.data);
             setTrucks(truckRes.data);
             setOverdueRecords(overdueRes.data);
+            setRoutes(Array.isArray(routesRes.data) ? routesRes.data : []);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -122,7 +125,7 @@ const Maintenance = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {trucks.filter(t => t.status === 'active').map(truck => {
-                        const distanceDriven = Math.max(0, (truck.totalDistance || 0) - (truck.lastServiceDistance || 0));
+                        const distanceDriven = getTruckDistanceSinceServiceKm(truck, routes);
                         const dateLast = truck.lastServiceDate ? new Date(truck.lastServiceDate) : new Date(truck.createdAt || Date.now());
                         const daysSince = Math.floor((Date.now() - dateLast.getTime()) / (1000 * 60 * 60 * 24));
                         const needsMaintenance = distanceDriven > 10000 || daysSince > 120;

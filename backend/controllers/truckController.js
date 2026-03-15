@@ -1,4 +1,16 @@
 const fleetService = require('../services/fleetService');
+const xlsx = require('xlsx');
+const path = require('path');
+const fs = require('fs');
+
+const TRUCK_FILES = [
+    'RawData_TN29CA1787_2026-01-01_To_2026-03-15.xlsx',
+    'RawData_TN29CD4797_2026-01-01_To_2026-03-15.xlsx',
+    'RawData_TN29CF1787_2026-01-01_To_2026-03-15.xlsx',
+    'RawData_TN29CH1787_2026-01-01_To_2026-03-15.xlsx',
+    'RawData_TN29CH2959_2026-01-01_To_2026-03-15.xlsx',
+    'RawData_TN29CW5375_2026-01-01_To_2026-03-15.xlsx',
+];
 
 exports.getAllTrucks = async (req, res, next) => {
     try {
@@ -51,5 +63,32 @@ exports.assignDriver = async (req, res, next) => {
         res.json({ message: 'Driver assigned successfully', truck });
     } catch (error) {
         next(error);
+    }
+};
+
+exports.getRawData = (req, res) => {
+    try {
+        const allData = [];
+
+        TRUCK_FILES.forEach((filename) => {
+            const filePath = path.join(__dirname, '../../', filename);
+            if (!fs.existsSync(filePath)) return;
+
+            const workbook = xlsx.readFile(filePath);
+            const firstSheetName = workbook.SheetNames[0];
+            if (!firstSheetName) return;
+
+            const sheet = workbook.Sheets[firstSheetName];
+            const rows = xlsx.utils.sheet_to_json(sheet, { defval: null });
+            const truckId = filename.split('_')[1] || 'UNKNOWN';
+
+            rows.forEach((row) => {
+                allData.push({ ...row, truck_id: truckId });
+            });
+        });
+
+        res.json({ success: true, data: allData });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 };

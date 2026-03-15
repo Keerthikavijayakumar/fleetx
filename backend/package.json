@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "migrate:permit-paths": "node scripts/migratePermitPaths.js",
+    "assign:random-crew": "node scripts/assignRandomTripCrew.js --all"
   },
   "dependencies": {
     "axios": "^1.13.6",
@@ -19,7 +21,9 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.3",
     "multer": "^1.4.5-lts.1",
-    "socket.io": "^4.7.2"
+    "node-cron": "^4.2.1",
+    "socket.io": "^4.7.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

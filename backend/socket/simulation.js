@@ -33,6 +33,11 @@ function initializeSimulation(io) {
             const updates = [];
 
             for (const truck of trucks) {
+                // Backfill legacy records created before registrationDate became mandatory.
+                if (!truck.registrationDate) {
+                    truck.registrationDate = truck.createdAt || new Date();
+                }
+
                 const latChange = (Math.random() - 0.5) * 0.02;
                 const lngChange = (Math.random() - 0.5) * 0.02;
 

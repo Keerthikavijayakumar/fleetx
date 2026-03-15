@@ -14,7 +14,7 @@ const DashboardLayout = () => {
     const { user } = useAuth();
 
     useEffect(() => {
-        if (user?.role === 'admin' || user?.role === 'manager') {
+        if (user?.role === 'admin') {
             const socket = io(SOCKET_URL);
             socket.on('emergencyAlert', (alertData) => {
                 setEmergencyAlert(alertData);

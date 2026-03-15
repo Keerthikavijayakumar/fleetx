@@ -5,18 +5,16 @@ import DashboardLayout from './components/DashboardLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import LiveTracking from './pages/LiveTracking';
 import FleetManagement from './pages/FleetManagement';
-import RoutePlanner from './pages/RoutePlanner';
 import Maintenance from './pages/Maintenance';
-import Analytics from './pages/Analytics';
+import TelemetryAnalytics from './pages/TelemetryAnalytics';
 import Settings from './pages/Settings';
 import MyTruck from './pages/MyTruck';
-import DriverAnalysis from './pages/DriverAnalysis';
+import AdminModule from './pages/AdminModule';
+import TruckDetail from './pages/TruckDetail';
+import PersonDetail from './pages/PersonDetail';
 
 const RoleRedirect = () => {
-  const { user } = useAuth();
-  if (user?.role === 'driver') return <Navigate to="/my-truck" replace />;
   return <Dashboard />;
 };
 
@@ -36,14 +34,14 @@ function App() {
             }
           >
             <Route index element={<RoleRedirect />} />
-            <Route path="live-tracking" element={<LiveTracking />} />
             <Route path="fleet" element={<FleetManagement />} />
-            <Route path="route-planner" element={<RoutePlanner />} />
             <Route path="maintenance" element={<Maintenance />} />
-            <Route path="analytics" element={<Analytics />} />
+            <Route path="telemetry" element={<TelemetryAnalytics />} />
+            <Route path="admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminModule /></ProtectedRoute>} />
+            <Route path="trucks/:id" element={<TruckDetail />} />
+            <Route path="people/:id" element={<PersonDetail />} />
             <Route path="settings" element={<Settings />} />
             <Route path="my-truck" element={<MyTruck />} />
-            <Route path="driver-analysis" element={<DriverAnalysis />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

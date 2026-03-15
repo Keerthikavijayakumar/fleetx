@@ -1,26 +1,24 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-    HiOutlineViewGrid, HiOutlineLocationMarker, HiOutlineTruck,
-    HiOutlineMap, HiOutlineKey, HiOutlineChartBar, HiOutlineCog,
-    HiOutlineChevronLeft, HiOutlineChevronRight,
+    HiOutlineViewGrid, HiOutlineTruck,
+    HiOutlineKey, HiOutlineCog,
+    HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineBeaker,
 } from 'react-icons/hi';
 
 const allNavItems = [
-    { path: '/', icon: HiOutlineViewGrid, label: 'Overview', roles: ['admin', 'manager'] },
-    { path: '/live-tracking', icon: HiOutlineLocationMarker, label: 'Live Tracking', roles: ['admin', 'manager'] },
+    { path: '/', icon: HiOutlineViewGrid, label: 'Overview', roles: ['admin', 'assistant', 'driver'] },
+    { path: '/admin', icon: HiOutlineCog, label: 'Admin Module', roles: ['admin'] },
+    { path: '/telemetry', icon: HiOutlineBeaker, label: 'Fleet Intelligence', roles: ['admin', 'assistant'] },
     { path: '/fleet', icon: HiOutlineTruck, label: 'Fleet', roles: ['admin'] },
-    { path: '/route-planner', icon: HiOutlineMap, label: 'Routes', roles: ['admin'] },
     { path: '/maintenance', icon: HiOutlineKey, label: 'Maintenance', roles: ['admin'] },
-    { path: '/analytics', icon: HiOutlineChartBar, label: 'Analytics', roles: ['admin', 'manager'] },
-    { path: '/my-truck', icon: HiOutlineTruck, label: 'My Truck', roles: ['driver'] },
-    { path: '/driver-analysis', icon: HiOutlineChartBar, label: 'Analysis', roles: ['driver'] },
+    { path: '/my-truck', icon: HiOutlineTruck, label: 'Driver Details', roles: ['driver'] },
     { path: '/settings', icon: HiOutlineCog, label: 'Settings', roles: ['admin'] },
 ];
 
 const Sidebar = ({ collapsed, onToggle }) => {
     const { user } = useAuth();
-    const role = user?.role || 'manager';
+    const role = user?.role || 'admin';
     const navItems = allNavItems.filter(item => item.roles.includes(role));
 
     return (

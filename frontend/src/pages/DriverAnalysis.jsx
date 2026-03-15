@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
     HiOutlineMap, HiOutlineClock, HiOutlineLightningBolt, 
     HiOutlineCloud, HiOutlineTruck,
-    HiOutlineLocationMarker, HiOutlineSearch
+    HiOutlineLocationMarker, HiOutlineSearch, HiOutlineFire, HiOutlineOfficeBuilding
 } from 'react-icons/hi';
 import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
@@ -114,16 +114,16 @@ const DriverAnalysis = () => {
             if (res.data && res.data.elements) {
                 const stops = res.data.elements.map(el => {
                     let typeName = el.tags.amenity || 'rest_area';
-                    let icon = '📍';
-                    if (typeName === 'fuel') icon = '⛽';
-                    if (typeName === 'restaurant') icon = '🍔';
-                    if (typeName === 'parking') icon = '🅿️';
+                    let iconType = 'location';
+                    if (typeName === 'fuel') iconType = 'fuel';
+                    if (typeName === 'restaurant') iconType = 'restaurant';
+                    if (typeName === 'parking') iconType = 'parking';
 
                     return {
                         id: el.id,
                         name: el.tags.name || el.tags.brand || `Nearby ${typeName.charAt(0).toUpperCase() + typeName.slice(1)}`,
                         type: typeName,
-                        icon: icon,
+                        iconType,
                         lat: el.lat,
                         lng: el.lon,
                         distance: calculateDistance(lat, lng, el.lat, el.lon)
@@ -344,8 +344,11 @@ const DriverAnalysis = () => {
                                     <div className="space-y-3">
                                         {restStops.map((stop) => (
                                             <div key={stop.id} className="flex items-center gap-4 p-3 hover:bg-gray-50 rounded-xl border border-gray-100 transition-all">
-                                                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl shadow-inner">
-                                                    {stop.icon}
+                                                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 shadow-inner">
+                                                    {stop.iconType === 'fuel' && <HiOutlineLightningBolt className="text-lg" />}
+                                                    {stop.iconType === 'restaurant' && <HiOutlineFire className="text-lg" />}
+                                                    {stop.iconType === 'parking' && <HiOutlineOfficeBuilding className="text-lg" />}
+                                                    {stop.iconType === 'location' && <HiOutlineLocationMarker className="text-lg" />}
                                                 </div>
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-bold text-gray-800 truncate">{stop.name}</p>

@@ -1,5 +1,49 @@
 const Maintenance = require('../models/Maintenance');
 const Truck = require('../models/Truck');
+const Route = require('../models/Route');
+
+async function getTruckTotalDistanceFromRoutes(truck) {
+    if (!truck) return 0;
+
+    const sumByTruckRef = await Route.aggregate([
+        { $match: { truckId: truck._id } },
+        {
+            $group: {
+                _id: null,
+                total: { $sum: { $ifNull: ['$distanceKm', '$distance'] } },
+            },
+        },
+    ]);
+
+    const regCandidatesRaw = [truck.truckId, truck.licensePlate]
+        .map((v) => String(v || '').trim())
+        .filter(Boolean);
+    const regCandidatesUpper = regCandidatesRaw.map((v) => v.toUpperCase());
+
+    if (regCandidatesRaw.length === 0) {
+        return Number(sumByTruckRef[0]?.total || 0);
+    }
+
+    const sumByRegistration = await Route.aggregate([
+        {
+            $match: {
+                registrationNumber: {
+                    $in: [...regCandidatesRaw, ...regCandidatesUpper],
+                },
+            },
+        },
+        {
+            $group: {
+                _id: null,
+                total: { $sum: { $ifNull: ['$distanceKm', '$distance'] } },
+            },
+        },
+    ]);
+
+    const byRef = Number(sumByTruckRef[0]?.total || 0);
+    const byReg = Number(sumByRegistration[0]?.total || 0);
+    return Math.max(byRef, byReg);
+}
 
 class MaintenanceService {
     async getAllRecords() {
@@ -20,7 +64,7 @@ class MaintenanceService {
             const truck = await Truck.findById(data.truckId);
             if (truck) {
                 truck.lastServiceDate = Date.now();
-                truck.lastServiceDistance = truck.totalDistance || 0;
+                truck.lastServiceDistance = await getTruckTotalDistanceFromRoutes(truck);
                 await truck.save();
             }
         }
@@ -36,7 +80,7 @@ class MaintenanceService {
             const truck = await Truck.findById(record.truckId);
             if (truck) {
                 truck.lastServiceDate = Date.now();
-                truck.lastServiceDistance = truck.totalDistance || 0;
+                truck.lastServiceDistance = await getTruckTotalDistanceFromRoutes(truck);
                 await truck.save();
             }
         }

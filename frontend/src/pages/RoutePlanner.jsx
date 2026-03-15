@@ -148,15 +148,23 @@ const RoutePlanner = () => {
 
                 // Save route
                 try {
+                    const now = new Date();
+                    const end = new Date(now.getTime() + durationInTrafficSec * 1000);
                     await routesAPI.plan({
                         source: origin,
                         destination,
+                        truckId: selectedTruck._id,
                         distance: parseFloat(distanceKm.toFixed(1)),
                         fuelConsumed,
                         fuelCost,
                         carbonEmission,
                         trafficLevel,
                         duration: leg.duration_in_traffic?.text || leg.duration.text,
+                        tollCount: 0,
+                        tollPrice: 0,
+                        tripStartTime: now.toISOString(),
+                        tripEndTime: end.toISOString(),
+                        status: 'scheduled',
                     });
                 } catch (e) {
                     console.error('Failed to save route:', e);

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { HiOutlineTruck, HiOutlineMail, HiOutlineLockClosed, HiOutlineUser, HiOutlineLocationMarker, HiOutlineChartBar, HiOutlineShieldCheck } from 'react-icons/hi';
 
 const Register = () => {
-    const [form, setForm] = useState({ username: '', email: '', password: '', role: 'manager' });
+    const [form, setForm] = useState({ username: '', email: '', password: '', role: 'driver' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const { register } = useAuth();
@@ -26,8 +26,8 @@ const Register = () => {
 
     const roles = [
         { value: 'admin', label: 'Admin', desc: 'Full system access', activeClasses: 'border-rose-400 bg-rose-50 text-rose-700 shadow-sm shadow-rose-100' },
-        { value: 'manager', label: 'Manager', desc: 'Fleet operations', activeClasses: 'border-blue-400 bg-blue-50 text-blue-700 shadow-sm shadow-blue-100' },
         { value: 'driver', label: 'Driver', desc: 'GPS & routes', activeClasses: 'border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-100' },
+        { value: 'assistant', label: 'Assistant', desc: 'Trip support', activeClasses: 'border-indigo-400 bg-indigo-50 text-indigo-700 shadow-sm shadow-indigo-100' },
     ];
 
     return (
@@ -149,7 +149,7 @@ const Register = () => {
                             </div>
                             <div style={{ marginBottom: '24px' }}>
                                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '12px' }}>Select Role</label>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     {roles.map(r => (
                                         <button key={r.value} type="button"
                                             onClick={() => setForm({ ...form, role: r.value })}

@@ -5,7 +5,7 @@ import {
     LineChart, Line, BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { HiOutlineChartBar, HiOutlineUpload, HiOutlineDocumentText, HiOutlineLocationMarker, HiOutlineMap, HiOutlineTruck, HiOutlineLightningBolt } from 'react-icons/hi';
+import { HiOutlineChartBar, HiOutlineLocationMarker, HiOutlineMap, HiOutlineTruck, HiOutlineLightningBolt } from 'react-icons/hi';
 
 const COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6'];
 
@@ -35,8 +35,6 @@ const Analytics = () => {
     const [truckDetails, setTruckDetails] = useState(null);
     const [isTruckLoading, setIsTruckLoading] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [uploading, setUploading] = useState(false);
-    const [uploadMessage, setUploadMessage] = useState('');
 
     useEffect(() => { fetchAllData(); }, []);
 
@@ -124,31 +122,6 @@ const Analytics = () => {
         setIsTruckLoading(false);
     };
 
-    const handleCSVUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        setUploading(true);
-        setUploadMessage('');
-        try {
-            const formData = new FormData();
-            formData.append('csvFile', file);
-            formData.append('type', 'trucks');
-            const res = await analyticsAPI.uploadCSV(formData);
-            setUploadMessage(`✅ ${res.data.message}`);
-            if (res.data.data) {
-                if (res.data.data.fuelConsumption) setFuelData(res.data.data.fuelConsumption);
-                if (res.data.data.co2Emissions) setCo2Data(res.data.data.co2Emissions);
-                if (res.data.data.deliveryTime) setDeliveryTimeData(res.data.data.deliveryTime);
-                if (res.data.data.maintenanceCost) setMaintenanceCostData(res.data.data.maintenanceCost);
-            }
-        } catch (err) {
-            setUploadMessage('❌ Upload failed: ' + (err.response?.data?.message || err.message));
-        } finally {
-            setUploading(false);
-            e.target.value = '';
-        }
-    };
-
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
@@ -168,37 +141,11 @@ const Analytics = () => {
                 </div>
             </div>
 
-            {/* CSV Upload (Admin only) */}
-            {isAdmin && (
-                <div className="card p-5 mb-6">
-                    <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                        <HiOutlineUpload className="text-red-500" /> Upload Truck Analytics CSV
-                    </h3>
-                    <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                        <div className="flex items-center gap-3 mb-3">
-                            <HiOutlineDocumentText className="text-blue-500 text-xl" />
-                            <div>
-                                <p className="text-sm font-medium text-gray-800">Truck Operational Data</p>
-                                <p className="text-xs text-gray-500">Format: date,truck_id,distance_km,fuel_used_liters,cost_rs,co2_kg,delivery_time_min</p>
-                            </div>
-                        </div>
-                        <label className="btn-secondary text-sm cursor-pointer inline-flex items-center gap-2">
-                            <HiOutlineUpload /> Choose CSV File
-                            <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" />
-                        </label>
-                    </div>
-                    {uploadMessage && (
-                        <p className={`mt-3 text-sm ${uploadMessage.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>{uploadMessage}</p>
-                    )}
-                    {uploading && <p className="mt-3 text-sm text-amber-600">Processing CSV file...</p>}
-                </div>
-            )}
-
             {/* Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-800 mb-4">Fuel Consumption Trend</h3>
-                    <ResponsiveContainer width="100%" height={280}>
+                    <ResponsiveContainer width="100%" height={280} minHeight={0} minWidth={0}>
                         <LineChart data={fuelData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                             <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
@@ -212,7 +159,7 @@ const Analytics = () => {
 
                 <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-800 mb-4">Cost Analysis</h3>
-                    <ResponsiveContainer width="100%" height={280}>
+                    <ResponsiveContainer width="100%" height={280} minHeight={0} minWidth={0}>
                         <BarChart data={maintenanceCostData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                             <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
@@ -226,7 +173,7 @@ const Analytics = () => {
 
                 <div className="card p-5">
                     <h3 className="text-sm font-semibold text-gray-800 mb-4">CO₂ Emissions</h3>
-                    <ResponsiveContainer width="100%" height={280}>
+                    <ResponsiveContainer width="100%" height={280} minHeight={0} minWidth={0}>
                         <AreaChart data={co2Data}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                             <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
@@ -247,7 +194,7 @@ const Analytics = () => {
                 {isAdmin && (
                     <div className="card p-5">
                         <h3 className="text-sm font-semibold text-gray-800 mb-4">Delivery Time Analysis</h3>
-                        <ResponsiveContainer width="100%" height={280}>
+                        <ResponsiveContainer width="100%" height={280} minHeight={0} minWidth={0}>
                             <LineChart data={deliveryTimeData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                 <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
@@ -264,7 +211,7 @@ const Analytics = () => {
                     <div className="card p-5 lg:col-span-2">
                         <h3 className="text-sm font-semibold text-gray-800 mb-4">Traffic Impact Analysis</h3>
                         <div className="flex items-center justify-center">
-                            <ResponsiveContainer width="100%" height={300}>
+                            <ResponsiveContainer width="100%" height={300} minHeight={0} minWidth={0}>
                                 <PieChart>
                                     <Pie data={trafficData} cx="50%" cy="50%" outerRadius={100} innerRadius={50} dataKey="value" nameKey="name"
                                         label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} labelLine={{ stroke: '#94a3b8' }}>

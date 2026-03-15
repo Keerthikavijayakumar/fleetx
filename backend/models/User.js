@@ -21,13 +21,26 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: [true, 'Password is required'],
-        minlength: 6,
+        minlength: 3,
     },
     role: {
         type: String,
-        enum: ['admin', 'manager', 'driver'],
-        default: 'manager',
+        enum: ['admin', 'driver', 'assistant'],
+        default: 'driver',
     },
+    // ── Personal profile (driver / assistant) ─────────────────────────────
+    fullName:            { type: String, trim: true },
+    photoPath:           { type: String },
+    dateOfBirth:         { type: Date },
+    phone:               { type: String, trim: true },
+    additionalPhone:     { type: String, trim: true },
+    monthlySalary:       { type: Number, min: 0, default: 0 },
+    address:             { type: String, trim: true },
+    // ── Professional / compliance ─────────────────────────────────────────
+    driverLicenceNumber: { type: String, trim: true },
+    aadharNumber:        { type: String, trim: true },
+    experienceYears:     { type: Number, min: 0, default: 0 },
+    // ─────────────────────────────────────────────────────────────────────
     createdAt: {
         type: Date,
         default: Date.now,
@@ -35,6 +48,8 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.pre('save', async function (next) {
+    if (this.phone) this.phone = String(this.phone).replace(/[\s-]/g, '');
+    if (this.additionalPhone) this.additionalPhone = String(this.additionalPhone).replace(/[\s-]/g, '');
     if (!this.isModified('password')) return next();
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);

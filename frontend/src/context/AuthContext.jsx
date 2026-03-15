@@ -34,8 +34,8 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async (email, password) => {
-        const res = await api.post('/auth/login', { email, password });
+    const login = async (emailOrPhone, password) => {
+        const res = await api.post('/auth/login', { emailOrPhone, password });
         const { token: newToken, user: userData } = res.data;
         localStorage.setItem('fleetx_token', newToken);
         setToken(newToken);
