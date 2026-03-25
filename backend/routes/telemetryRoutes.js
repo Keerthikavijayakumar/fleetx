@@ -19,17 +19,37 @@ router.get('/latest-positions', auth, admin, async (req, res, next) => {
 router.get('/gps-history', auth, admin, async (req, res, next) => {
     try {
         const { registrationNumber, from, to, limit } = req.query;
-        if (!registrationNumber) return res.status(400).json({ message: 'registrationNumber required' });
+        console.log(`[DEBUG] /gps-history query: reg=${registrationNumber}, from=${from}, to=${to}`);
         res.json(await svc.getGpsHistory({ registrationNumber, from, to, limit: parseInt(limit) || 2000 }));
-    } catch (e) { next(e); }
+    } catch (e) {
+        console.error(`[ERROR] /gps-history: ${e.message}`);
+        next(e);
+    }
 });
 
-// Trips list
+// Trips list (individual segments)
 router.get('/trips', auth, admin, async (req, res, next) => {
     try {
         const { registrationNumber, from, to, page, limit } = req.query;
+        console.log(`[DEBUG] /trips query: reg=${registrationNumber}, from=${from}, to=${to}, page=${page}`);
         res.json(await svc.getTripList({ registrationNumber, from, to, page: parseInt(page) || 1, limit: parseInt(limit) || 50 }));
-    } catch (e) { next(e); }
+    } catch (e) {
+        console.error(`[ERROR] /trips: ${e.message}`);
+        next(e);
+    }
+});
+
+// Stitched Trips (Master Trips)
+router.get('/stitched-trips', auth, admin, async (req, res, next) => {
+    try {
+        const { registrationNumber, from, to } = req.query;
+        console.log(`[DEBUG] /stitched-trips query: reg=${registrationNumber}, from=${from}, to=${to}`);
+        const result = await svc.getStitchedTrips({ registrationNumber, from, to });
+        res.json(result);
+    } catch (e) {
+        console.error(`[ERROR] /stitched-trips: ${e.message}`);
+        next(e);
+    }
 });
 
 // Overspeed events
@@ -84,7 +104,6 @@ router.get('/engine-health', auth, admin, async (req, res, next) => {
 router.get('/speed-trend', auth, admin, async (req, res, next) => {
     try {
         const { registrationNumber, from, to, bucketMinutes } = req.query;
-        if (!registrationNumber) return res.status(400).json({ message: 'registrationNumber required' });
         res.json(await svc.getSpeedTrend({ registrationNumber, from, to, bucketMinutes: parseInt(bucketMinutes) || 15 }));
     } catch (e) { next(e); }
 });
@@ -101,7 +120,6 @@ router.get('/monthly-distance', auth, admin, async (req, res, next) => {
 router.get('/system-params', auth, admin, async (req, res, next) => {
     try {
         const { registrationNumber, from, to, bucketMinutes } = req.query;
-        if (!registrationNumber) return res.status(400).json({ message: 'registrationNumber required' });
         res.json(await svc.getSystemParamsTrend({ registrationNumber, from, to, bucketMinutes: parseInt(bucketMinutes) || 30 }));
     } catch (e) { next(e); }
 });

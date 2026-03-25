@@ -29,6 +29,17 @@
     --shadow-xl: 0 20px 50px -12px rgba(0, 0, 0, 0.12);
     --radius: 14px;
     --radius-sm: 10px;
+
+    /* Responsive Sidebar Widths */
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 80px;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-width: 0px;
+        --sidebar-collapsed-width: 0px;
+    }
 }
 
 * {
@@ -53,6 +64,9 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-md);
+    /* subtle ring improves visual separation when cards are close */
+    outline: 1px solid rgba(255, 255, 255, 0.8);
+    outline-offset: 0;
     overflow: hidden;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -533,20 +547,84 @@ textarea.input-field {
 ====================================== */
 .app-layout {
     display: flex;
+    min-height: 100vh;
 }
 
 .sidebar {
-    width: 240px;
+    width: var(--sidebar-width);
     height: 100vh;
     position: fixed;
     left: 0;
     top: 0;
     z-index: 50;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+}
+
+/* Mobile sidebar logic */
+@media (max-width: 768px) {
+    .sidebar {
+        width: 260px;
+        transform: translateX(-100%);
+        box-shadow: 20px 0 50px rgba(0,0,0,0.1);
+    }
+    .sidebar.mobile-open {
+        transform: translateX(0);
+    }
+    .mobile-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        backdrop-filter: blur(4px);
+        z-index: 45;
+        animation: fadeIn 0.2s ease;
+    }
 }
 
 .main-content {
-    margin-left: 240px;
-    width: calc(100% - 240px);
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
     min-height: 100vh;
-    padding: 88px 28px 28px 28px;
+    padding: 88px 24px 24px 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar.collapsed + .navbar + .main-content,
+.main-content.expanded {
+    margin-left: var(--sidebar-collapsed-width);
+    width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        margin-left: 0;
+        width: 100%;
+        padding: 80px 16px 16px 16px;
+    }
+}
+
+/* ======================================
+   Global Card Spacing (All Roles/Pages)
+====================================== */
+/* Most pages use animate-fade-in as the top wrapper. Add section breathing room. */
+.main-content .animate-fade-in > * + * {
+    margin-top: 14px;
+}
+
+/* Common card-like blocks used in admin/driver/assistant pages. */
+.main-content .rounded-2xl.border + .rounded-2xl.border,
+.main-content .rounded-xl.border + .rounded-xl.border,
+.main-content .card + .card {
+    margin-top: 12px;
+}
+
+/* Improve visual gap for stacked cards inside scrollable lists. */
+.main-content .space-y-2 > .card,
+.main-content .space-y-2 > .rounded-xl,
+.main-content .space-y-2 > .rounded-2xl {
+    margin-top: 2px;
+    margin-bottom: 2px;
 }

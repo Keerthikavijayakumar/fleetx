@@ -168,96 +168,101 @@ const MyTruck = () => {
         }
     };
 
+    const tripsForSelectedTruck = myTruck ? routes.filter(r => {
+        const tid = r.truckId?._id || r.truckId;
+        return String(tid) === String(myTruck._id);
+    }) : [];
+
     return (
         <div className="animate-fade-in">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-900">Driver Details</h1>
-                <p className="text-gray-500 text-sm mt-1">Your admin-assigned profile and operational details</p>
-            </div>
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900">Driver Details</h1>
+                    <p className="text-gray-500 text-sm mt-1">Your admin-assigned profile and operational details</p>
+                </div>
 
-            {/* Driver profile */}
-            <div className="card p-5 mb-6">
-                <div className="flex items-start gap-4 flex-wrap">
-                    {user?.photoPath ? (
-                        <img src={`/api/${user.photoPath}`} alt={user.fullName || user.username} className="w-16 h-16 rounded-full object-cover border border-gray-200" />
-                    ) : (
-                        <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-extrabold text-2xl">
-                            {(user?.fullName || user?.username || 'D')[0]?.toUpperCase()}
-                        </div>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 min-w-0">
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineUser /> Name</p>
-                            <p className="text-sm font-bold text-gray-800">{user?.fullName || user?.username || '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlinePhone /> Phone</p>
-                            <p className="text-sm font-bold text-gray-800">{user?.phone || '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineMail /> Email</p>
-                            <p className="text-sm font-bold text-gray-800 break-all">{user?.email || '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineCurrencyRupee /> Salary</p>
-                            <p className="text-sm font-bold text-gray-800">Rs.{Number(user?.monthlySalary || 0).toLocaleString()}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Date of Birth</p>
-                            <p className="text-sm font-bold text-gray-800">{fmtDate(user?.dateOfBirth)}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Age</p>
-                            <p className="text-sm font-bold text-gray-800">{calcAge(user?.dateOfBirth) != null ? `${calcAge(user?.dateOfBirth)} yrs` : '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Experience</p>
-                            <p className="text-sm font-bold text-gray-800">{user?.experienceYears != null ? `${user.experienceYears} yrs` : '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Licence</p>
-                            <p className="text-sm font-bold text-gray-800 break-all">{user?.driverLicenceNumber || '—'}</p>
-                        </div>
-                        <div>
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Aadhaar</p>
-                            <p className="text-sm font-bold text-gray-800">{user?.aadharNumber || '—'}</p>
-                        </div>
-                        <div className="sm:col-span-2 lg:col-span-4">
-                            <p className="text-[11px] text-gray-500 font-semibold uppercase">Address</p>
-                            <p className="text-sm font-bold text-gray-800">{user?.address || '—'}</p>
+                {/* Driver profile */}
+                <div className="card p-5 mb-6">
+                    <div className="flex items-start gap-4 flex-wrap">
+                        {user?.photoPath ? (
+                            <img src={`/api/${user.photoPath}`} alt={user.fullName || user.username} className="w-16 h-16 rounded-full object-cover border border-gray-200" />
+                        ) : (
+                            <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center text-white font-extrabold text-2xl">
+                                {(user?.fullName || user?.username || 'D')[0]?.toUpperCase()}
+                            </div>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 min-w-0">
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineUser /> Name</p>
+                                <p className="text-sm font-bold text-gray-800">{user?.fullName || user?.username || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlinePhone /> Phone</p>
+                                <p className="text-sm font-bold text-gray-800">{user?.phone || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineMail /> Email</p>
+                                <p className="text-sm font-bold text-gray-800 break-all">{user?.email || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase inline-flex items-center gap-1"><HiOutlineCurrencyRupee /> Salary</p>
+                                <p className="text-sm font-bold text-gray-800">Rs.{Number(user?.monthlySalary || 0).toLocaleString()}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Date of Birth</p>
+                                <p className="text-sm font-bold text-gray-800">{fmtDate(user?.dateOfBirth)}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Age</p>
+                                <p className="text-sm font-bold text-gray-800">{calcAge(user?.dateOfBirth) != null ? `${calcAge(user?.dateOfBirth)} yrs` : '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Experience</p>
+                                <p className="text-sm font-bold text-gray-800">{user?.experienceYears != null ? `${user.experienceYears} yrs` : '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Licence</p>
+                                <p className="text-sm font-bold text-gray-800 break-all">{user?.driverLicenceNumber || '—'}</p>
+                            </div>
+                            <div>
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Aadhaar</p>
+                                <p className="text-sm font-bold text-gray-800">{user?.aadharNumber || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2 lg:col-span-4">
+                                <p className="text-[11px] text-gray-500 font-semibold uppercase">Address</p>
+                                <p className="text-sm font-bold text-gray-800">{user?.address || '—'}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Assigned trucks summary */}
-            <div className="card p-5 mb-6">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">Assigned Trucks</h3>
-                {loading ? (
-                    <p className="text-xs text-gray-400">Loading assignments...</p>
-                ) : myTrucks.length === 0 ? (
-                    <p className="text-xs text-gray-400">No truck assignments found for your trips yet.</p>
-                ) : (
-                    <div className="flex flex-wrap gap-2">
-                        {myTrucks.map((t) => (
-                            <span key={t._id} className="px-2 py-1 text-xs font-semibold rounded-lg bg-gray-100 text-gray-700 border border-gray-200">
-                                {t.truckId} • {t.licensePlate}
-                            </span>
-                        ))}
-                    </div>
-                )}
-            </div>
+                {/* Assigned trucks summary */}
+                <div className="card p-5 mb-6">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-3">Assigned Trucks</h3>
+                    {loading ? (
+                        <p className="text-xs text-gray-400">Loading assignments...</p>
+                    ) : myTrucks.length === 0 ? (
+                        <p className="text-xs text-gray-400">No truck assignments found for your trips yet.</p>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {myTrucks.map((t) => (
+                                <span key={t._id} className="px-2 py-1 text-xs font-semibold rounded-lg bg-gray-100 text-gray-700 border border-gray-200">
+                                    {t.truckId} • {t.licensePlate}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
-            {myTruck && (
-                <>
-                    {/* Truck Live Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                        {[
-                            { label: 'Truck ID', value: myTruck.truckId, icon: HiOutlineTruck, color: 'bg-red-50 text-red-600' },
-                            { label: 'License Plate', value: myTruck.licensePlate, icon: HiOutlineLocationMarker, color: 'bg-blue-50 text-blue-600' },
+                {myTruck && (
+                    <>
+                        {/* Truck Live Info */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+                            {[
+                                { label: 'Truck ID', value: myTruck.truckId, icon: HiOutlineTruck, color: 'bg-red-50 text-red-600' },
+                                { label: 'License Plate', value: myTruck.licensePlate, icon: HiOutlineLocationMarker, color: 'bg-blue-50 text-blue-600' },
                                 { label: 'Trips On This Truck', value: tripsForSelectedTruck.length, icon: HiOutlineLightningBolt, color: 'bg-green-50 text-green-600' },
-                            { label: 'Fuel Level', value: `${myTruck.fuelLevel?.toFixed(0)}%`, icon: HiOutlineStatusOnline, color: myTruck.fuelLevel > 50 ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600' },
-                        ].map(item => (
+                                { label: 'Fuel Level', value: `${(myTruck.fuelLevel || 0).toFixed(0)}%`, icon: HiOutlineStatusOnline, color: (myTruck.fuelLevel || 0) > 50 ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600' },
+                            ].map(item => (
                             <div key={item.label} className="card p-4">
                                 <div className="flex items-center gap-3">
                                     <div className={`w-10 h-10 rounded-lg ${item.color} flex items-center justify-center`}>

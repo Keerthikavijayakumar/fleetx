@@ -67,7 +67,9 @@ async function getFleetSummary() {
 
 // ─── 2. GPS Route History ──────────────────────────────────────────────────────
 async function getGpsHistory({ registrationNumber, from, to, limit = 2000 }) {
-    const filter = { registrationNumber };
+    console.log(`[SVC] getGpsHistory: reg=${registrationNumber}, from=${from}, to=${to}`);
+    const filter = {};
+    if (registrationNumber) filter.registrationNumber = registrationNumber;
     if (from || to) {
         filter.timestamp = {};
         if (from) filter.timestamp.$gte = new Date(from);
@@ -100,12 +102,13 @@ async function getLatestPositions() {
         },
         // Expose registrationNumber as a proper named field alongside _id
         { $addFields: { registrationNumber: '$_id' } },
-    ]);
+    ], { allowDiskUse: true });
     return rows.filter(r => r.latitude != null && r.longitude != null);
 }
 
 // ─── 4. Trips (from Route model via IAlertTelemetry ignition events) ──────────
 async function getTripList({ registrationNumber, from, to, page = 1, limit = 50 }) {
+    console.log(`[SVC] getTripList: reg=${registrationNumber}, from=${from}, to=${to}, page=${page}`);
     const Route = require('../models/Route');
     const regFilter = registrationNumber
         ? { externalTripKey: { $regex: `^${registrationNumber}_` } }
@@ -174,7 +177,7 @@ async function getOverspeedRanking({ from, to, threshold = THRESHOLDS.overspeedK
         { $sort: { violations: -1 } },
         { $limit: 20 },
         { $project: { registrationNumber: '$_id', violations: 1, maxSpeedKmph: { $round: ['$maxSpeedKmph', 1] }, avgSpeedKmph: { $round: ['$avgSpeedKmph', 1] }, _id: 0 } },
-    ]);
+    ], { allowDiskUse: true });
     return rows;
 }
 
@@ -262,7 +265,7 @@ async function getFuelEfficiencyRanking({ registrationNumber, from, to } = {}) {
             },
         },
         { $sort: { kmPerLitre: -1 } },
-    ]);
+    ], { allowDiskUse: true });
     return rows;
 }
 
@@ -326,7 +329,7 @@ async function getEngineHealth({ registrationNumber } = {}) {
                 fuelLevel: { $first: '$fuelLevel' },
             },
         },
-    ]);
+    ], { allowDiskUse: true });
 
     return latest.map(t => {
         const warnings = [];
@@ -415,7 +418,7 @@ async function getMonthlyDistanceTrend({ registrationNumber } = {}) {
             },
         },
         { $sort: { month: 1 } },
-    ]);
+    ], { allowDiskUse: true });
     return rows;
 }
 
@@ -479,7 +482,7 @@ async function getUnderusedTrucks({ thresholdKm = 50, days = 30 } = {}) {
         },
         { $match: { distanceKm: { $lt: thresholdKm } } },
         { $sort: { distanceKm: 1 } },
-    ]);
+    ], { allowDiskUse: true });
     return rows;
 }
 
@@ -523,11 +526,76 @@ async function runAlertSweep() {
     return upserted.length;
 }
 
+// ─── 16. Stitched Trips (Master Trips) ────────────────────────────────────────
+async function getStitchedTrips({ registrationNumber, from, to }) {
+    console.log(`[SVC] getStitchedTrips: reg=${registrationNumber}, from=${from}, to=${to}`);
+    const Route = require('../models/Route');
+    const filter = { sourceSystem: 'ialert_csv' };
+    if (registrationNumber) filter.registrationNumber = registrationNumber;
+    if (from || to) {
+        filter.tripStartTime = {};
+        if (from) filter.tripStartTime.$gte = new Date(from);
+        if (to) filter.tripStartTime.$lte = new Date(to);
+    }
+
+    const segments = await Route.find(filter)
+        .populate('truckId')
+        .sort({ tripStartTime: 1 })
+        .limit(1000)
+        .lean();
+    
+    // Group segments by masterTripId
+    const masterTripsMap = new Map();
+    for (const seg of segments) {
+        const mid = seg.masterTripId || `SINGLE-${seg._id}`;
+        if (!masterTripsMap.has(mid)) {
+            masterTripsMap.set(mid, {
+                masterTripId: mid,
+                startTime: seg.tripStartTime,
+                endTime: seg.tripEndTime,
+                source: seg.source,
+                destination: seg.destination,
+                registrationNumber: seg.registrationNumber || seg.truckId?.licensePlate || seg.truckId?.numberPlate || '',
+                truckId: seg.truckId?._id || seg.truckId,
+                totalDistanceKm: 0,
+                totalFuelL: 0,
+                durationMinutes: 0,
+                segments: []
+            });
+        }
+        const master = masterTripsMap.get(mid);
+        master.segments.push(seg);
+        const segDist = seg.distanceKm || seg.distance || 0;
+        master.totalDistanceKm += Number(segDist);
+        master.totalFuelL += (seg.fuelConsumed || 0);
+        master.durationMinutes += (seg.durationMinutes || seg.estimatedDurationMinutes || 0);
+        
+        // Ensure master has truck info from any segment that has it
+        if (!master.registrationNumber) {
+            master.registrationNumber = seg.registrationNumber || seg.truckId?.licensePlate || seg.truckId?.numberPlate || '';
+        }
+        if (!master.truckId) master.truckId = seg.truckId?._id || seg.truckId;
+        
+        // Update master boundaries
+        if (seg.tripStartTime < master.startTime) {
+            master.startTime = seg.tripStartTime;
+            master.source = seg.source;
+        }
+        if (seg.tripEndTime > master.endTime) {
+            master.endTime = seg.tripEndTime;
+            master.destination = seg.destination;
+        }
+    }
+
+    return Array.from(masterTripsMap.values()).sort((a, b) => b.startTime - a.startTime);
+}
+
 module.exports = {
     getFleetSummary,
     getGpsHistory,
     getLatestPositions,
     getTripList,
+    getStitchedTrips,
     getOverspeedEvents,
     getOverspeedRanking,
     getIdleSessions,

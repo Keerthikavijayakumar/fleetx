@@ -10,6 +10,7 @@ const SOCKET_URL = 'http://localhost:5000';
 
 const DashboardLayout = () => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [mobileOpen, setMobileOpen] = useState(false);
     const [emergencyAlert, setEmergencyAlert] = useState(null);
     const { user } = useAuth();
 
@@ -26,12 +27,25 @@ const DashboardLayout = () => {
 
     return (
         <div className="app-layout bg-[#f8f9fc]">
+            {/* Mobile Overlay */}
+            {mobileOpen && (
+                <div 
+                    className="mobile-overlay" 
+                    onClick={() => setMobileOpen(false)} 
+                />
+            )}
+
             <Sidebar
                 collapsed={sidebarCollapsed}
                 onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                mobileOpen={mobileOpen}
+                setMobileOpen={setMobileOpen}
             />
-            <Navbar sidebarCollapsed={sidebarCollapsed} />
-            <main className="main-content transition-all duration-300 ease-in-out">
+            <Navbar 
+                sidebarCollapsed={sidebarCollapsed} 
+                onToggleMobile={() => setMobileOpen(!mobileOpen)}
+            />
+            <main className={`main-content transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'expanded' : ''}`}>
                     {/* Emergency Alert Toast */}
                     {emergencyAlert && (
                         <div className="fixed top-24 right-6 z-50 w-96 bg-red-600 border-2 border-red-500 rounded-xl shadow-2xl animate-pulse overflow-hidden">

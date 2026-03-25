@@ -178,6 +178,12 @@ const routeSchema = new mongoose.Schema({
         trim: true,
         index: true,
     },
+    masterTripId: {
+        type: String,
+        default: '',
+        trim: true,
+        index: true,
+    },
     distanceKm: {
         type: Number,
         default: null,
@@ -210,6 +216,11 @@ routeSchema.index(
         },
     }
 );
+
+// getTripList: sort { tripStartTime:-1, startTime:-1 } + filter by sourceSystem + registrationNumber
+routeSchema.index({ sourceSystem: 1, registrationNumber: 1, tripStartTime: -1 });
+// maintenanceService: query by truckId
+routeSchema.index({ truckId: 1 });
 
 routeSchema.pre('save', function (next) {
     const tollComputed = this.tollCount * this.tollPrice;

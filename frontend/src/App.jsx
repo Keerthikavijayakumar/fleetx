@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import DashboardLayout from './components/DashboardLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -13,6 +14,7 @@ import MyTruck from './pages/MyTruck';
 import AdminModule from './pages/AdminModule';
 import TruckDetail from './pages/TruckDetail';
 import PersonDetail from './pages/PersonDetail';
+import Trips from './pages/Trips';
 
 const RoleRedirect = () => {
   return <Dashboard />;
@@ -37,6 +39,7 @@ function App() {
             <Route path="fleet" element={<FleetManagement />} />
             <Route path="maintenance" element={<Maintenance />} />
             <Route path="telemetry" element={<TelemetryAnalytics />} />
+            <Route path="trips" element={<ProtectedRoute allowedRoles={['admin', 'assistant']}><ErrorBoundary name="Trips"><Trips /></ErrorBoundary></ProtectedRoute>} />
             <Route path="admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminModule /></ProtectedRoute>} />
             <Route path="trucks/:id" element={<TruckDetail />} />
             <Route path="people/:id" element={<PersonDetail />} />

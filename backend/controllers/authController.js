@@ -45,20 +45,26 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
     try {
-        // Accept email OR phone number in the `emailOrPhone` field (or legacy `email`)
         const identifier = (req.body.emailOrPhone || req.body.email || '').trim();
         const { password } = req.body;
         const compactPhone = identifier.replace(/[\s-]/g, '');
 
         // Determine if identifier looks like a phone number (digits, optional + prefix)
         const isPhone = /^[+\d][\d\s\-]{7,}$/.test(identifier);
-        const query = isPhone
-            ? { phone: { $in: getPhoneVariants(compactPhone) } }
-            : { email: identifier };
+        
+        let query;
+        if (isPhone) {
+            query = { phone: { $in: getPhoneVariants(compactPhone) } };
+        } else if (identifier.includes('@')) {
+            query = { email: identifier };
+        } else {
+            // Fallback to username
+            query = { username: identifier };
+        }
 
         const user = await User.findOne(query);
         if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials. Please check your email/phone and password.' });
+            return res.status(401).json({ message: 'Invalid credentials. Please check your login details and password.' });
         }
 
         let isMatch = await user.comparePassword(password);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { HiOutlineTruck, HiOutlineMail, HiOutlineLockClosed, HiOutlineLocationMarker, HiOutlineChartBar, HiOutlineShieldCheck, HiOutlinePhone } from 'react-icons/hi';
+import { HiOutlineTruck, HiOutlineLockClosed, HiOutlineLocationMarker, HiOutlineChartBar, HiOutlineShieldCheck, HiOutlinePhone } from 'react-icons/hi';
 
 const Login = () => {
     const [emailOrPhone, setEmailOrPhone] = useState('');
@@ -108,10 +108,10 @@ const Login = () => {
 
                         <form onSubmit={handleSubmit}>
                             <div style={{ marginBottom: '22px' }}>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '8px' }}>Email or Phone Number</label>
+                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '8px' }}>Phone Number</label>
                                 <div className="relative">
                                     <HiOutlinePhone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 text-lg pointer-events-none" />
-                                    <input type="text" placeholder="Email address or +91 phone number" value={emailOrPhone}
+                                    <input type="text" placeholder="+91 phone number" value={emailOrPhone}
                                         onChange={(e) => setEmailOrPhone(e.target.value)}
                                         style={{ width: '100%', paddingLeft: '48px', paddingRight: '16px', paddingTop: '14px', paddingBottom: '14px', background: '#f9fafb', border: '2px solid transparent', borderRadius: '12px', fontSize: '14px', color: '#1f2937', outline: 'none', transition: 'all 0.2s' }}
                                         onFocus={(e) => { e.target.style.background = '#fff'; e.target.style.borderColor = '#e11d48'; }}
@@ -143,12 +143,6 @@ const Login = () => {
                             </button>
                         </form>
 
-                        <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #f3f4f6', textAlign: 'center' }}>
-                            <p style={{ color: '#9ca3af', fontSize: '14px' }}>
-                                Don't have an account?{' '}
-                                <Link to="/register" style={{ color: '#e11d48', fontWeight: '700' }}>Create Account</Link>
-                            </p>
-                        </div>
                     </div>
                 </div>
             </div>

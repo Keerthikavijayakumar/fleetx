@@ -16,5 +16,7 @@ const alertSchema = new mongoose.Schema({
 
 alertSchema.index({ status: 1, timestamp: -1 });
 alertSchema.index({ registrationNumber: 1, category: 1, status: 1 });
+// TTL: auto-delete resolved/acknowledged alerts after 60 days
+alertSchema.index({ updatedAt: 1 }, { expireAfterSeconds: 60 * 24 * 60 * 60, partialFilterExpression: { status: { $in: ['resolved', 'acknowledged'] } } });
 
 module.exports = mongoose.model('Alert', alertSchema);

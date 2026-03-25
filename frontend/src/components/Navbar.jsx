@@ -1,5 +1,5 @@
 import { useAuth } from '../context/AuthContext';
-import { HiOutlineLogout, HiOutlineBell, HiOutlineSearch } from 'react-icons/hi';
+import { HiOutlineLogout, HiOutlineBell, HiOutlineSearch, HiOutlineMenuAlt2 } from 'react-icons/hi';
 
 const roleBadges = {
     admin: { bg: 'bg-rose-100', text: 'text-rose-700', dot: 'bg-rose-500' },
@@ -7,14 +7,24 @@ const roleBadges = {
     assistant: { bg: 'bg-indigo-100', text: 'text-indigo-700', dot: 'bg-indigo-500' },
 };
 
-const Navbar = ({ sidebarCollapsed }) => {
+const Navbar = ({ sidebarCollapsed, onToggleMobile }) => {
     const { user, logout } = useAuth();
     const badge = roleBadges[user?.role] || roleBadges.admin;
 
     return (
-        <header className="fixed top-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-6 z-40 transition-all duration-300" style={{ left: '240px' }}>
-            {/* Left: search */}
+        <header className={`fixed top-0 right-0 h-16 bg-white/80 backdrop-blur-xl border-b border-gray-100 flex items-center justify-between px-4 sm:px-6 z-40 transition-all duration-300 ${sidebarCollapsed ? 'sidebar-collapsed-header' : 'sidebar-open-header'}`} 
+                style={{ 
+                    left: 'var(--sidebar-width)',
+                    width: 'calc(100% - var(--sidebar-width))'
+                }}>
+            {/* Left: Hamburger + Search */}
             <div className="flex items-center gap-3 flex-1 max-w-md">
+                <button 
+                    onClick={onToggleMobile}
+                    className="md:hidden w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 hover:bg-gray-100 transition-colors"
+                >
+                    <HiOutlineMenuAlt2 className="text-xl" />
+                </button>
                 <div className="relative flex-1">
                     <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 text-lg pointer-events-none" />
                     <input

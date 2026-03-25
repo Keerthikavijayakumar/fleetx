@@ -12,5 +12,7 @@ const syncLogSchema = new mongoose.Schema({
 });
 
 syncLogSchema.index({ jobName: 1, startedAt: -1 });
+// TTL: auto-delete sync logs older than 30 days
+syncLogSchema.index({ startedAt: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
 
 module.exports = mongoose.model('SyncLog', syncLogSchema);

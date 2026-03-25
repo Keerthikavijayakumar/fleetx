@@ -104,6 +104,7 @@ export const telemetryAPI = {
     speedTrend: (params) => api.get('/telemetry/speed-trend', { params }),
     monthlyDistance: (params) => api.get('/telemetry/monthly-distance', { params }),
     systemParams: (params) => api.get('/telemetry/system-params', { params }),
+    stitchedTrips: (params) => api.get('/telemetry/stitched-trips', { params }),
     underusedTrucks: (params) => api.get('/telemetry/underused-trucks', { params }),
     runAlertSweep: () => api.post('/telemetry/run-alert-sweep'),
 };
@@ -142,6 +143,15 @@ export const emergencyAPI = {
     triggerAlert: (data) => api.post('/emergency', data),
     getAlerts: () => api.get('/emergency'),
     resolveAlert: (id) => api.patch(`/emergency/${id}`),
+};
+
+// Salary API (Trip-based salary assignments)
+export const salaryAPI = {
+    assignSalary: (data) => api.post('/salary', data),
+    getSalaries: (params = {}) => api.get('/salary', { params }),
+    getSalaryById: (id) => api.get(`/salary/${id}`),
+    updateSalary: (id, data) => api.put(`/salary/${id}`, data),
+    deleteSalary: (id) => api.delete(`/salary/${id}`),
 };
 
 export default api;

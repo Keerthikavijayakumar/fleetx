@@ -43,4 +43,22 @@ const ialertTelemetrySchema = new mongoose.Schema({
 ialertTelemetrySchema.index({ registrationNumber: 1, timestamp: 1 }, { unique: true });
 ialertTelemetrySchema.index({ dateKey: 1, registrationNumber: 1 });
 
+// TTL: auto-delete telemetry older than TELEMETRY_RETENTION_DAYS (default 90 days)
+const telemetryRetentionSecs = Number(process.env.TELEMETRY_RETENTION_DAYS || 90) * 24 * 60 * 60;
+ialertTelemetrySchema.index({ timestamp: 1 }, { expireAfterSeconds: telemetryRetentionSecs });
+
+// ── Indexes for aggregation sort/match performance ─────────────────────────────
+// getLatestPositions: $sort { registrationNumber:1, timestamp:-1 } (mixed dir — needs own index)
+ialertTelemetrySchema.index({ registrationNumber: 1, timestamp: -1 });
+// getEngineHealth: $sort { timestamp:-1 } across entire collection
+ialertTelemetrySchema.index({ timestamp: -1 });
+// getOverspeedEvents / getOverspeedRanking: $match on vehicleSpeedKmph + timestamp range
+ialertTelemetrySchema.index({ vehicleSpeedKmph: 1, registrationNumber: 1, timestamp: 1 });
+// getIdleSessions: $match ignitionStatus + vehicleSpeedKmph + optional reg + timestamp
+ialertTelemetrySchema.index({ ignitionStatus: 1, vehicleSpeedKmph: 1, registrationNumber: 1, timestamp: 1 });
+// getUnderusedTrucks / getMonthlyDistanceTrend: $match timestamp range + odometerKm not null
+ialertTelemetrySchema.index({ timestamp: 1, odometerKm: 1, registrationNumber: 1 });
+// getFuelEfficiencyRanking: $match fuelConsumption > 0, odometerKm not null
+ialertTelemetrySchema.index({ fuelConsumption: 1, odometerKm: 1, registrationNumber: 1 });
+
 module.exports = mongoose.model('IAlertTelemetry', ialertTelemetrySchema);

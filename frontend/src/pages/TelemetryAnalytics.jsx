@@ -114,10 +114,10 @@ function TabBar({ tabs, active, onChange }) {
 function TripsTab({ regNo }) {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [from, setFrom] = useState(monthAgo);
-  const [to, setTo] = useState(today);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [from, setFrom] = useState(monthAgo);
+  const [to, setTo] = useState(today);
 
   const load = useCallback(async (pageNum = 1) => {
     setLoading(true);
@@ -209,7 +209,7 @@ function TripsTab({ regNo }) {
             </table>
           </div>
           {/* Pagination */}
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center mt-6">
             <button disabled={page <= 1} onClick={() => handlePage(page - 1)}
               className="px-3 py-1 border rounded-lg text-sm disabled:opacity-40 hover:bg-gray-50">← Prev</button>
             <span className="px-3 py-1 text-sm text-gray-500">Page {page}</span>
@@ -358,13 +358,14 @@ function EngineTab({ regNo }) {
   useEffect(() => { load(); }, [load]);
 
   const metricInfo = [
-    { key: 'coolantTemp', label: 'Coolant Temp', unit: '°C', color: '#ef4444' },
-    { key: 'oilPressure', label: 'Oil Pressure', unit: 'bar', color: '#f97316' },
-    { key: 'exhaustTemp', label: 'Exhaust Temp', unit: '°C', color: '#eab308' },
-    { key: 'engineRpm', label: 'Engine RPM', unit: '', color: '#8b5cf6' },
+    { key: 'coolantTempC', label: 'Coolant Temp', unit: '°C', color: '#ef4444' },
+    { key: 'oilPressureKpa', label: 'Oil Pressure', unit: 'kPa', color: '#f97316' },
+    { key: 'exhaustTempC', label: 'Exhaust Temp', unit: '°C', color: '#eab308' },
+    { key: 'engineSpeedRpm', label: 'Engine RPM', unit: '', color: '#8b5cf6' },
     { key: 'batteryVoltage', label: 'Battery', unit: 'V', color: '#22c55e' },
-    { key: 'airPressure', label: 'Air Pressure', unit: 'kPa', color: '#06b6d4' },
-    { key: 'defLevel', label: 'DEF Level', unit: '%', color: '#3b82f6' },
+    { key: 'airPressure1Kpa', label: 'Air Pressure 1', unit: 'kPa', color: '#06b6d4' },
+    { key: 'airPressure2Kpa', label: 'Air Pressure 2', unit: 'kPa', color: '#06b6d4' },
+    { key: 'defLevelLtr', label: 'DEF Level', unit: 'L', color: '#3b82f6' },
   ];
 
   // Build trend data from systemParams
@@ -649,6 +650,7 @@ const TRUCK_TABS = [
 ];
 
 function TruckDetail({ truck, lastPos, onBack }) {
+  console.log('[DEBUG] Rendering TruckDetail for:', truck?.registrationNumber || truck?._id);
   const [activeTab, setActiveTab] = useState('trips');
   const regNo = truck.registrationNumber || truck.numberPlate || truck._id || '';
 
@@ -851,6 +853,7 @@ export default function TelemetryAnalytics() {
 
   // When a truck is selected, try to find its latest position data
   const handleSelectTruck = (truckData) => {
+    console.log('[DEBUG] Selected truck data:', truckData);
     setSelectedTruck(truckData);
     setFleetTab('overview');
   };

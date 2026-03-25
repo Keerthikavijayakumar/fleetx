@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { authAPI } from '../services/api';
+import { authAPI, salaryAPI } from '../services/api';
+
 import { useAuth } from '../context/AuthContext';
 import {
     HiOutlineUser,
@@ -71,6 +72,9 @@ const PersonDetail = () => {
     const [actionMessage, setActionMessage] = useState('');
     const [generatingReport, setGeneratingReport] = useState(false);
     const photoRef = useRef(null);
+    const [mySalaries, setMySalaries] = useState([]);
+    const [salariesLoading, setSalariesLoading] = useState(false);
+
     const [editForm, setEditForm] = useState({
         username: '',
         email: '',
@@ -114,12 +118,21 @@ const PersonDetail = () => {
     useEffect(() => {
         authAPI.adminGetUser(id)
             .then((res) => {
-                setPerson(res.data.user);
-                setEditForm(mapPersonToForm(res.data.user));
+                const p = res.data.user;
+                setPerson(p);
+                setEditForm(mapPersonToForm(p));
+                // Fetch the person's salary records
+                setSalariesLoading(true);
+                const params = p.role === 'driver' ? { driverId: id } : { assistantId: id };
+                salaryAPI.getSalaries({ ...params, limit: 100 })
+                    .then(r => setMySalaries(r.data?.salaries || []))
+                    .catch(() => {})
+                    .finally(() => setSalariesLoading(false));
             })
             .catch(() => setError('Could not load person details.'))
             .finally(() => setLoading(false));
     }, [id]);
+
 
     const ef = (field) => ({
         value: editForm[field],
@@ -463,6 +476,46 @@ const PersonDetail = () => {
                     </div>
                 </Section>
             </div>
+
+            {/* Trip Salary History */}
+            <Section title="Trip Pay History" color="green">
+                {salariesLoading ? (
+                    <p className="text-xs text-gray-400">Loading salary records...</p>
+                ) : mySalaries.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">No salary assignments recorded for this person yet.</p>
+                ) : (
+                    <div className="space-y-3">
+                        {mySalaries.map((s) => (
+                            <div key={s._id} className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">
+                                            {s.salaryDate ? new Date(s.salaryDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                                        </p>
+                                        <span className="w-1 h-1 rounded-full bg-emerald-300" />
+                                        <p className="text-[10px] text-gray-400 font-semibold">
+                                            {s.tripId?.truckId?.licensePlate || s.tripId?.registrationNumber || 'N/A'}
+                                        </p>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-800 truncate">
+                                        {s.tripId?.source} → {s.tripId?.destination}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-0.5">
+                                        Driver: {s.driverId?.fullName || s.driverId?.username || '—'} &nbsp;·&nbsp; Asst: {s.assistantId?.fullName || s.assistantId?.username || '—'}
+                                    </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <p className="text-[10px] text-gray-400 uppercase font-bold">My Share</p>
+                                    <p className="text-base font-black text-emerald-700">
+                                        ₹{(person?.role === 'driver' ? s.driverShare : s.assistantShare)?.toLocaleString()}
+                                    </p>
+                                    <p className="text-[9px] text-gray-400">of ₹{s.totalAmountReceived?.toLocaleString()}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Section>
         </div>
     );
 };

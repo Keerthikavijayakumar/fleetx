@@ -102,6 +102,53 @@ class RouteService {
         return 'High';
     }
 
+    getDayRange(dateLike) {
+        const date = dateLike ? new Date(dateLike) : new Date();
+        if (Number.isNaN(date.getTime())) {
+            throw Object.assign(new Error('Invalid trip date provided'), { status: 400 });
+        }
+        const start = new Date(date);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        return { start, end };
+    }
+
+    async ensureCrewAvailability({ routeId = null, driverId, assistantId, tripDate }) {
+        const distinctCrew = [...new Set([driverId, assistantId].filter(Boolean).map(String))];
+        if (distinctCrew.length === 0) return;
+
+        if (driverId && assistantId && String(driverId) === String(assistantId)) {
+            throw Object.assign(new Error('Driver and assistant cannot be the same person for a trip'), { status: 400 });
+        }
+
+        const { start, end } = this.getDayRange(tripDate);
+        const conflict = await Route.findOne({
+            ...(routeId ? { _id: { $ne: routeId } } : {}),
+            $or: [
+                { driverId: { $in: distinctCrew } },
+                { assistantId: { $in: distinctCrew } },
+            ],
+            $or: [
+                { tripStartTime: { $gte: start, $lt: end } },
+                {
+                    tripStartTime: null,
+                    createdAt: { $gte: start, $lt: end },
+                },
+            ],
+        })
+            .select('source destination tripStartTime createdAt')
+            .lean();
+
+        if (conflict) {
+            const dayText = new Date(conflict.tripStartTime || conflict.createdAt).toLocaleDateString('en-IN');
+            throw Object.assign(
+                new Error(`Crew member is already assigned on ${dayText} (${conflict.source} -> ${conflict.destination})`),
+                { status: 400 }
+            );
+        }
+    }
+
     async planRoute(data) {
         const {
             source,
@@ -159,13 +206,19 @@ class RouteService {
             }
         }
 
-        const distanceKm = distance || Math.floor(Math.random() * 500) + 50;
+        await this.ensureCrewAvailability({
+            driverId,
+            assistantId,
+            tripDate: tripStartTime || new Date(),
+        });
+
+        const distanceKm = distance || 0;
         const speedForEstimate = Number(truck?.speed || 45) > 0 ? Number(truck?.speed || 45) : 45;
         const estimatedDurationMinutes = this.parseDurationToMinutes(duration) || Number(((distanceKm / speedForEstimate) * 60).toFixed(2));
         const fuelConsumed = this.calculateFuelConsumed(distanceKm, fuelEfficiency);
         const fuelCost = this.calculateFuelCost(fuelConsumed, costPerLitre);
         const carbonEmission = this.calculateCarbonEmission(fuelConsumed, emissionFactor);
-        const trafficLevel = this.determineTrafficLevel(null, null);
+        const trafficLevel = this.determineTrafficLevel(null, null) || 'Low';
         const tollTotalCost = Number((Number(tollCount || 0) * Number(tollPrice || 0)).toFixed(2));
         const foodCostValue = Number(foodCost || 0);
         const totalTripCost = Number((fuelCost + tollTotalCost + foodCostValue).toFixed(2));
@@ -208,17 +261,18 @@ class RouteService {
     async getAllRoutes() {
         const rows = await Route.find()
             .populate('truckId')
-            .populate('driverId', 'username email role')
-            .populate('assistantId', 'username email role')
-            .sort({ createdAt: -1 });
+            .populate('driverId', 'username email role fullName')
+            .populate('assistantId', 'username email role fullName')
+            .sort({ createdAt: -1 })
+            .limit(100);
         return rows.map((r) => this.withRealtimeMetrics(r));
     }
 
     async getRouteById(id) {
         const route = await Route.findById(id)
             .populate('truckId')
-            .populate('driverId', 'username email role')
-            .populate('assistantId', 'username email role');
+            .populate('driverId', 'username email role fullName')
+            .populate('assistantId', 'username email role fullName');
         if (!route) throw Object.assign(new Error('Route not found'), { status: 404 });
         return this.withRealtimeMetrics(route);
     }
@@ -228,19 +282,33 @@ class RouteService {
         if (update.tripStartTime) update.tripStartTime = new Date(update.tripStartTime);
         if (update.tripEndTime) update.tripEndTime = new Date(update.tripEndTime);
 
-        if (update.driverId) {
-            const driver = await User.findById(update.driverId).select('role');
+        const existing = await Route.findById(id).select('driverId assistantId tripStartTime createdAt');
+        if (!existing) throw Object.assign(new Error('Route not found'), { status: 404 });
+
+        const effectiveDriverId = update.driverId !== undefined ? update.driverId : existing.driverId;
+        const effectiveAssistantId = update.assistantId !== undefined ? update.assistantId : existing.assistantId;
+        const effectiveTripDate = update.tripStartTime || existing.tripStartTime || existing.createdAt || new Date();
+
+        if (effectiveDriverId) {
+            const driver = await User.findById(effectiveDriverId).select('role');
             if (!driver || driver.role !== 'driver') {
                 throw Object.assign(new Error('Assigned driver must be a user with driver role'), { status: 400 });
             }
         }
 
-        if (update.assistantId) {
-            const assistant = await User.findById(update.assistantId).select('role');
+        if (effectiveAssistantId) {
+            const assistant = await User.findById(effectiveAssistantId).select('role');
             if (!assistant || !['assistant', 'driver'].includes(assistant.role)) {
                 throw Object.assign(new Error('Assigned assistant must be assistant or driver role'), { status: 400 });
             }
         }
+
+        await this.ensureCrewAvailability({
+            routeId: id,
+            driverId: effectiveDriverId,
+            assistantId: effectiveAssistantId,
+            tripDate: effectiveTripDate,
+        });
 
         if (
             update.tollCount !== undefined ||
@@ -248,8 +316,7 @@ class RouteService {
             update.fuelCost !== undefined ||
             update.foodCost !== undefined
         ) {
-            const current = await Route.findById(id);
-            if (!current) throw Object.assign(new Error('Route not found'), { status: 404 });
+            const current = existing;
 
             const tollCount = Number(update.tollCount ?? current.tollCount ?? 0);
             const tollPrice = Number(update.tollPrice ?? current.tollPrice ?? 0);
@@ -285,8 +352,8 @@ class RouteService {
             runValidators: true,
         })
             .populate('truckId')
-            .populate('driverId', 'username email role')
-            .populate('assistantId', 'username email role');
+            .populate('driverId', 'username email role fullName')
+            .populate('assistantId', 'username email role fullName');
 
         if (!route) throw Object.assign(new Error('Route not found'), { status: 404 });
         return this.withRealtimeMetrics(route);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { adminSyncAPI, authAPI, routesAPI, trucksAPI } from '../services/api';
+import { adminSyncAPI, authAPI, routesAPI, trucksAPI, salaryAPI } from '../services/api';
 import {
     HiOutlineViewGrid,
     HiOutlineTruck,
@@ -15,6 +15,7 @@ import {
     HiOutlineArrowRight,
     HiOutlineSave,
     HiOutlineDocumentDownload,
+    HiOutlineCurrencyDollar,
 } from 'react-icons/hi';
 import {
     generateAllLorriesReport,
@@ -157,18 +158,25 @@ const emptyUserForm = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Module-level cache — survives route navigation without losing data
+// ─────────────────────────────────────────────────────────────────────────────
+const _adminCache = { trucks: null, trips: null, users: null, fetchedAt: 0 };
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 const AdminModule = () => {
     const navigate = useNavigate();
     const [section, setSection] = useState('add-trip');
-    const [loading, setLoading] = useState(true);
+    // Only show full-page spinner on the very first load; subsequent navigations
+    // use cached data instantly and refresh silently in the background.
+    const [loading, setLoading] = useState(!_adminCache.fetchedAt);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState('');
 
-    const [trucks, setTrucks]   = useState([]);
-    const [trips, setTrips]     = useState([]);
-    const [users, setUsers]     = useState([]);
+    const [trucks, setTrucks]   = useState(_adminCache.trucks || []);
+    const [trips, setTrips]     = useState(_adminCache.trips  || []);
+    const [users, setUsers]     = useState(_adminCache.users  || []);
     const [fleetData, setFleetData] = useState([]);
     const [rawDataError, setRawDataError] = useState('');
 
@@ -201,17 +209,56 @@ const AdminModule = () => {
     const [truckSearch, setTruckSearch]         = useState('');
     const [truckStatusFilter, setTruckStatusFilter] = useState('all');
 
+    // Trip assignment filter state
+    const [taSearch, setTaSearch]               = useState('');
+    const [taTruckFilter, setTaTruckFilter]     = useState('all');
+    const [taDriverFilter, setTaDriverFilter]   = useState('all');
+    const [taStatusFilter, setTaStatusFilter]   = useState('all');
+    const [taTab, setTaTab]                     = useState('active'); // 'active' | 'past'
+    const [assignedSalaries, setAssignedSalaries] = useState([]);
+
+    // Salary form state
+    const [salaryForm, setSalaryForm] = useState({
+        selectedTripId: '',
+        driverId: '',
+        assistantId: '',
+        totalAmountReceived: '',
+        salaryDate: new Date().toISOString().split('T')[0],
+        notes: '',
+    });
+    const [tripSearchFilters, setTripSearchFilters] = useState({
+        dateFrom: '',
+        dateTo: '',
+        source: '',
+        destination: '',
+        driverId: '',
+    });
+
     const refreshAll = async () => {
         try {
-            setLoading(true);
-            const [usersRes, trucksRes, tripsRes] = await Promise.all([
+            // Only block the UI with a spinner when there is no cached data yet.
+            // After the first load, all re-fetches happen silently in the background.
+            if (!_adminCache.fetchedAt) setLoading(true);
+            const [usersRes, trucksRes, tripsRes, salariesRes] = await Promise.all([
                 authAPI.adminListUsers(),
                 trucksAPI.getAll(),
                 routesAPI.getAll(),
+                salaryAPI.getSalaries({ limit: 500 }),
             ]);
-            setUsers(usersRes.data?.users || []);
-            setTrucks(Array.isArray(trucksRes.data) ? trucksRes.data : []);
-            setTrips(Array.isArray(tripsRes.data) ? tripsRes.data : []);
+            const fetchedUsers  = usersRes.data?.users || [];
+            const fetchedTrucks = Array.isArray(trucksRes.data) ? trucksRes.data : [];
+            const fetchedTrips  = Array.isArray(tripsRes.data) ? tripsRes.data : [];
+            const fetchedSalaries = salariesRes.data?.salaries || [];
+            
+            setAssignedSalaries(fetchedSalaries);
+            // Update module-level cache so the next mount is instant
+            _adminCache.users     = fetchedUsers;
+            _adminCache.trucks    = fetchedTrucks;
+            _adminCache.trips     = fetchedTrips;
+            _adminCache.fetchedAt = Date.now();
+            setUsers(fetchedUsers);
+            setTrucks(fetchedTrucks);
+            setTrips(fetchedTrips);
             setFleetData([]);
             setRawDataError('');
         } catch (err) {
@@ -240,12 +287,15 @@ const AdminModule = () => {
             return String(driverId) === String(person._id) || String(assistantId) === String(person._id);
         });
     }, [trips]);
-    const assignedCostForUser = useCallback((person) => {
-        return assignedTripsForUser(person).reduce((sum, trip) => {
-            const cost = Number(trip.realtime?.totalCost ?? trip.estimated?.totalCost ?? trip.totalTripCost ?? trip.fuelCost ?? 0);
-            return sum + (Number.isFinite(cost) ? cost : 0);
+    const assignedEarningsForUser = useCallback((person) => {
+        return assignedSalaries.reduce((sum, s) => {
+            const isDriver = String(s.driverId?._id || s.driverId) === String(person._id);
+            const isAsst = String(s.assistantId?._id || s.assistantId) === String(person._id);
+            if (isDriver) return sum + (s.driverShare || 0);
+            if (isAsst) return sum + (s.assistantShare || 0);
+            return sum;
         }, 0);
-    }, [assignedTripsForUser]);
+    }, [assignedSalaries]);
     const selectedTripTruck = useMemo(
         () => trucks.find((t) => t._id === tripForm.truckId),
         [trucks, tripForm.truckId]
@@ -297,6 +347,92 @@ const AdminModule = () => {
             return matchStatus && matchSearch;
         });
     }, [trucks, truckSearch, truckStatusFilter]);
+
+    // Helper: readable truck label from a trip
+    const tripTruckLabel = (trip) =>
+        trip.truckId?.licensePlate
+        || trip.truckId?.truckId
+        || trip.registrationNumber
+        || '—';
+
+    // Derived lists for trip assignment tabs
+    const taActiveTrips = useMemo(
+        () => trips.filter((t) => ['scheduled', 'in_transit'].includes(t.status)),
+        [trips]
+    );
+    const taPastTrips = useMemo(
+        () => trips.filter((t) => ['completed', 'delayed'].includes(t.status)),
+        [trips]
+    );
+
+    // Unique trucks present in trips (for the filter dropdown)
+    const tripsUniqueTrucks = useMemo(() => {
+        const seen = new Map();
+        trips.forEach((t) => {
+            const id = t.truckId?._id || t.truckId || t.registrationNumber;
+            if (id && !seen.has(id)) seen.set(id, tripTruckLabel(t));
+        });
+        return Array.from(seen.entries()).map(([id, label]) => ({ id, label }));
+    }, [trips]);
+
+    // Apply filters to whichever tab is active
+    const taFilteredTrips = useMemo(() => {
+        const base = taTab === 'active' ? taActiveTrips : taPastTrips;
+        return base.filter((trip) => {
+            if (taStatusFilter !== 'all' && trip.status !== taStatusFilter) return false;
+            if (taTruckFilter !== 'all') {
+                const truckKey = trip.truckId?._id || trip.truckId || trip.registrationNumber;
+                if (String(truckKey) !== taTruckFilter) return false;
+            }
+            if (taDriverFilter !== 'all') {
+                const dId = trip.driverId?._id || trip.driverId;
+                if (String(dId) !== taDriverFilter) return false;
+            }
+            if (taSearch) {
+                const q = taSearch.toLowerCase();
+                const inRoute = `${trip.source} ${trip.destination}`.toLowerCase().includes(q);
+                const inTruck = tripTruckLabel(trip).toLowerCase().includes(q);
+                const inDriver = (trip.driverId?.fullName || trip.driverId?.username || '').toLowerCase().includes(q);
+                if (!inRoute && !inTruck && !inDriver) return false;
+            }
+            return true;
+        });
+    }, [taTab, taActiveTrips, taPastTrips, taStatusFilter, taTruckFilter, taDriverFilter, taSearch]);
+
+    const filteredTripsForSalary = useMemo(() => {
+        let filtered = trips || [];
+
+        // 1. Apply search filters
+        if (tripSearchFilters.dateFrom) {
+            const fromDate = new Date(tripSearchFilters.dateFrom);
+            filtered = filtered.filter((r) => new Date(r.tripStartTime || r.createdAt) >= fromDate);
+        }
+
+        if (tripSearchFilters.dateTo) {
+            const toDate = new Date(tripSearchFilters.dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            filtered = filtered.filter((r) => new Date(r.tripStartTime || r.createdAt) <= toDate);
+        }
+
+        if (tripSearchFilters.source) {
+            const sourceNorm = tripSearchFilters.source.trim().toLowerCase();
+            filtered = filtered.filter((r) => (r.source || '').toLowerCase().includes(sourceNorm));
+        }
+
+        if (tripSearchFilters.destination) {
+            const destNorm = tripSearchFilters.destination.trim().toLowerCase();
+            filtered = filtered.filter((r) => (r.destination || '').toLowerCase().includes(destNorm));
+        }
+
+        if (tripSearchFilters.driverId) {
+            filtered = filtered.filter((r) => (r.driverId?._id || r.driverId) === tripSearchFilters.driverId);
+        }
+
+        // Only show trips with BOTH driver and assistant assigned
+        filtered = filtered.filter((r) => (r.driverId?._id || r.driverId) && (r.assistantId?._id || r.assistantId));
+
+        return filtered;
+    }, [trips, tripSearchFilters]);
 
     const rowsByTruck = useMemo(() => {
         const map = new Map();
@@ -424,10 +560,10 @@ const AdminModule = () => {
 
     const loadMonthlySyncStatus = async () => {
         try {
-            const [statusRes, historyRes, trucksRes] = await Promise.allSettled([
+            // Trucks are already loaded by refreshAll; no need to re-fetch them here.
+            const [statusRes, historyRes] = await Promise.allSettled([
                 adminSyncAPI.getIAlertSyncStatus(),
                 adminSyncAPI.getIAlertSyncHistory(100),
-                trucksAPI.getAll(),
             ]);
             if (statusRes.status === 'fulfilled') {
                 setMonthlySyncStatus(statusRes.value.data || null);
@@ -442,10 +578,6 @@ const AdminModule = () => {
                     const key = `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, '0')}`;
                     setExpandedHistoryMonths({ [key]: true });
                 }
-            }
-            if (trucksRes.status === 'fulfilled') {
-                const list = Array.isArray(trucksRes.value.data) ? trucksRes.value.data : [];
-                setTrucks(list);
             }
         } catch (err) {
             console.error('Failed to load sync status', err);
@@ -662,6 +794,12 @@ const AdminModule = () => {
                 tripEndTime:   tripForm.tripEndTime   ? new Date(tripForm.tripEndTime).toISOString()   : null,
             });
             setTripForm(emptyTripForm);
+            // Keep new trips visible in Trip Assignment even if old filters were active.
+            setTaTab('active');
+            setTaSearch('');
+            setTaTruckFilter('all');
+            setTaDriverFilter('all');
+            setTaStatusFilter('all');
             setMessage('Trip added successfully.');
             await refreshAll();
         } catch (err) {
@@ -677,6 +815,9 @@ const AdminModule = () => {
             [trip._id]: {
                 driverId: trip.driverId?._id || trip.driverId || '',
                 assistantId: trip.assistantId?._id || trip.assistantId || '',
+                tollCount: String(trip.tollCount ?? 0),
+                tollPrice: String(trip.tollPrice ?? 0),
+                foodCost: String(trip.foodCost ?? 0),
                 ...(prev[trip._id] || {}),
                 [field]: value,
             },
@@ -687,6 +828,9 @@ const AdminModule = () => {
         const draft = tripAssignmentDrafts[trip._id] || {
             driverId: trip.driverId?._id || trip.driverId || '',
             assistantId: trip.assistantId?._id || trip.assistantId || '',
+            tollCount: String(trip.tollCount ?? 0),
+            tollPrice: String(trip.tollPrice ?? 0),
+            foodCost: String(trip.foodCost ?? 0),
         };
         if (!draft.driverId || !draft.assistantId) {
             setMessage('Each trip must have both a driver and an assistant assigned.');
@@ -698,8 +842,11 @@ const AdminModule = () => {
             await routesAPI.update(trip._id, {
                 driverId: draft.driverId,
                 assistantId: draft.assistantId,
+                tollCount: Number(draft.tollCount || 0),
+                tollPrice: Number(draft.tollPrice || 0),
+                foodCost: Number(draft.foodCost || 0),
             });
-            setMessage('Trip assignment updated successfully.');
+            setMessage('Trip assignment and trip costs updated successfully.');
             await refreshAll();
         } catch (err) {
             setMessage('Failed to update trip assignment: ' + (err.response?.data?.message || err.message));
@@ -846,14 +993,16 @@ const AdminModule = () => {
     const peopleCard = (title, people) => {
         const accent = title === 'Drivers' ? 'blue' : title === 'Assistants' ? 'purple' : 'gray';
         return (
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                    <p className="text-sm font-extrabold text-gray-800">{title}</p>
-                    <span className="text-xs font-bold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{people.length}</span>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full">
+                <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <p className="text-base font-black text-gray-800">{title}</p>
+                    <span className="text-xs font-bold bg-white border border-gray-200 text-gray-600 px-2.5 py-1 rounded-full shadow-sm">
+                        {people.length} Records
+                    </span>
                 </div>
-                <div className="p-3 space-y-2 max-h-72 overflow-auto">
+                <div className="p-4 space-y-3 max-h-[500px] overflow-auto flex-1 bg-gray-50/20">
                     {people.length === 0
-                        ? <p className="text-xs text-gray-400 text-center py-6">No records yet.</p>
+                        ? <p className="text-sm text-gray-400 text-center py-10">No {title.toLowerCase()} records found.</p>
                         : people.map((p) => <PersonCard key={p._id} person={p} accent={accent} />)}
                 </div>
             </div>
@@ -862,88 +1011,79 @@ const AdminModule = () => {
 
     // Person detail card (used in directory + inline lists)
     const PersonCard = ({ person: p, accent }) => {
-        const ringColor = { blue: 'bg-blue-600', purple: 'bg-purple-600', gray: 'bg-gray-500' }[accent] || 'bg-gray-500';
+        const ringColor = { blue: 'bg-blue-600', purple: 'bg-indigo-600', gray: 'bg-gray-500' }[accent] || 'bg-gray-500';
         const age = calcAge(p.dateOfBirth);
         const assignedTrips = assignedTripsForUser(p);
-        const assignedCost = assignedCostForUser(p);
+        const assignedEarnings = assignedEarningsForUser(p);
         return (
             <div
-                className="bg-gray-50 border border-gray-100 rounded-xl p-3 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all"
+                className="bg-white border border-gray-100 rounded-xl p-5 cursor-pointer hover:shadow-xl hover:border-blue-200 hover:-translate-y-1 transition-all group"
                 onClick={() => navigate(`/people/${p._id}`)}
             >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-4">
                     {/* Avatar / photo */}
                     {p.photoPath ? (
                         <img
                             src={`/api/${p.photoPath}`}
                             alt={p.fullName || p.username}
-                            className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-white shadow"
+                            className="w-16 h-16 rounded-2xl object-cover shrink-0 border-2 border-white shadow-md group-hover:scale-105 transition-transform"
                         />
                     ) : (
-                        <div className={`w-12 h-12 rounded-full ${ringColor} flex items-center justify-center text-white font-extrabold text-lg shrink-0`}>
+                        <div className={`w-16 h-16 rounded-2xl ${ringColor} flex items-center justify-center text-white font-black text-2xl shrink-0 shadow-lg`}>
                             {(p.fullName || p.username)?.[0]?.toUpperCase()}
                         </div>
                     )}
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-extrabold text-gray-900 truncate">{p.fullName || p.username}</p>
-                        <p className="text-[11px] text-gray-500 text-safe-wrap">{p.email}</p>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                        <p className="text-base font-black text-gray-900 leading-tight group-hover:text-blue-600 transition-colors uppercase tracking-tight">{p.fullName || p.username}</p>
+                        <p className="text-xs font-medium text-gray-400 mt-0.5 truncate">{p.email || 'No email provided'}</p>
                         {(age !== null) && (
-                            <p className="text-[10px] text-gray-400 mt-0.5">
-                                Age {age} yrs
-                                {p.experienceYears > 0 && ` • ${p.experienceYears} yrs exp`}
-                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <span className="text-[11px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded">Age {age} yrs</span>
+                                {p.experienceYears > 0 && (
+                                    <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{p.experienceYears} yrs exp</span>
+                                )}
+                            </div>
                         )}
                     </div>
-                    <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full capitalize shrink-0">{p.role}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest bg-gray-100 text-gray-500 px-2.5 py-1 rounded-lg border border-gray-200 shrink-0 self-start group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-100 transition-colors">{p.role}</span>
                 </div>
+                
                 {/* Detail rows */}
-                <div className="mt-3.5 grid grid-cols-2 gap-x-4 gap-y-3">
+                <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4">
                     {p.phone && (
                         <div className="col-span-1">
-                            <p className="text-[9px] text-gray-400 uppercase">Phone</p>
-                            <p className="text-[11px] font-semibold text-gray-700">{p.phone}</p>
-                        </div>
-                    )}
-                    {p.additionalPhone && (
-                        <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Alt Phone</p>
-                            <p className="text-[11px] font-semibold text-gray-700">{p.additionalPhone}</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Phone</p>
+                            <p className="text-sm font-black text-gray-800">{p.phone}</p>
                         </div>
                     )}
                     {p.driverLicenceNumber && (
                         <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Licence</p>
-                            <p className="text-[11px] font-semibold text-gray-700">{p.driverLicenceNumber}</p>
-                        </div>
-                    )}
-                    {p.aadharNumber && (
-                        <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Aadhaar</p>
-                            <p className="text-[11px] font-semibold text-gray-700">{'*'.repeat(8) + p.aadharNumber.slice(-4)}</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Licence</p>
+                            <p className="text-sm font-black text-gray-800 break-all">{p.driverLicenceNumber}</p>
                         </div>
                     )}
                     {p.dateOfBirth && (
                         <div>
-                            <p className="text-[9px] text-gray-400 uppercase">Date of Birth</p>
-                            <p className="text-[11px] font-semibold text-gray-700">{fmtDate(p.dateOfBirth)}</p>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Date of Birth</p>
+                            <p className="text-sm font-bold text-gray-700">{fmtDate(p.dateOfBirth)}</p>
                         </div>
                     )}
                     <div>
-                        <p className="text-[9px] text-gray-400 uppercase">Assigned Trips</p>
-                        <p className="text-[11px] font-semibold text-gray-700">{assignedTrips.length}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Trip Earnings (Paid)</p>
+                        <p className="text-sm font-black text-emerald-600">Rs.{fmtNum(assignedEarnings, 0)}</p>
                     </div>
                     <div>
-                        <p className="text-[9px] text-gray-400 uppercase">Trip Cost Assigned</p>
-                        <p className="text-[11px] font-semibold text-gray-700">Rs.{fmtNum(assignedCost, 0)}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Assigned Trips</p>
+                        <p className="text-sm font-black text-blue-600">{assignedTrips.length}</p>
                     </div>
                     <div>
-                        <p className="text-[9px] text-gray-400 uppercase">Monthly Salary</p>
-                        <p className="text-[11px] font-semibold text-gray-700">Rs.{fmtNum(p.monthlySalary || 0, 0)}</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Monthly Salary</p>
+                        <p className="text-sm font-black text-gray-800">Rs.{fmtNum(p.monthlySalary || 0, 0)}</p>
                     </div>
                     {p.address && (
-                        <div className="col-span-2">
-                            <p className="text-[9px] text-gray-400 uppercase">Address</p>
-                            <p className="text-[11px] font-semibold text-gray-700 leading-relaxed text-safe-wrap">{p.address}</p>
+                        <div className="col-span-2 pt-2 border-t border-gray-50">
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Address</p>
+                            <p className="text-xs font-bold text-gray-600 leading-relaxed text-safe-wrap">{p.address}</p>
                         </div>
                     )}
                 </div>
@@ -953,12 +1093,13 @@ const AdminModule = () => {
 
     // Section header pill
     const SectionBadge = ({ color, letter, title, subtitle }) => {
-        const colors = {
-            blue:   { bg: 'bg-blue-600',   text: 'text-white', border: 'border-blue-200', headerBg: 'bg-blue-50' },
+        const colorMap = {
+            blue:   { bg: 'bg-blue-600',   text: 'text-white', border: 'border-blue-200',   headerBg: 'bg-blue-50' },
             green:  { bg: 'bg-emerald-600', text: 'text-white', border: 'border-emerald-200', headerBg: 'bg-emerald-50' },
             orange: { bg: 'bg-orange-500',  text: 'text-white', border: 'border-orange-200', headerBg: 'bg-orange-50' },
             purple: { bg: 'bg-purple-600',  text: 'text-white', border: 'border-purple-200', headerBg: 'bg-purple-50' },
-        }[color] || colors.blue;
+        };
+        const colors = colorMap[color] || colorMap.blue;
         return (
             <div className={`flex items-center gap-3 px-4 py-3 rounded-t-xl border-b ${colors.border} ${colors.headerBg}`}>
                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold ${colors.bg} ${colors.text} shrink-0`}>{letter}</span>
@@ -980,13 +1121,14 @@ const AdminModule = () => {
             </div>
 
             {/* Nav bar */}
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 mb-5 flex flex-wrap items-center gap-2">
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 mb-5 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 {[
                     { value: 'add-trip',       label: 'Add Trip', icon: HiOutlineMap },
                     { value: 'trip-assignment', label: 'Trip Assignment', icon: HiOutlineClipboardList },
                     { value: 'add-truck',      label: 'Add Truck', icon: HiOutlineTruck },
                     { value: 'add-driver',     label: 'Add Driver', icon: HiOutlineUser },
                     { value: 'add-assistant',  label: 'Add Assistant', icon: HiOutlineUsers },
+                    { value: 'add-salary',     label: 'Add Salary', icon: HiOutlineCurrencyDollar },
                     { value: 'people',         label: 'Drivers & Assistants', icon: HiOutlineUsers },
                     { value: 'monthly-report', label: 'Monthly Report', icon: HiOutlineDocumentDownload },
                 ].map(({ value, label, icon: Icon }) => (
@@ -1026,11 +1168,11 @@ const AdminModule = () => {
                                 const monthTrips  = trips.filter((r) => { const d = r.tripStartTime || r.createdAt; return d && new Date(d).toISOString().slice(0, 7) === monthKey; });
                                 const activeTrucks = trucks.filter((t) => t.status === 'active');
                                 return (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                 {[
                                     {
                                         label: 'Active Trucks',
-                                        value: activeTrucks.length || activeTruckIds.length,
+                                        value: activeTrucks.length,
                                         icon: HiOutlineTruck,
                                         color: 'from-emerald-500 to-emerald-600',
                                         desc: `${trucks.length} total lorries registered`,
@@ -1044,27 +1186,27 @@ const AdminModule = () => {
                                     },
                                     {
                                         label: 'Today\'s Trips',
-                                        value: todayTrips.length || todayDaily.trips,
+                                        value: todayTrips.length,
                                         icon: HiOutlineMap,
                                         color: 'from-blue-500 to-blue-600',
                                         desc: `${fmtNum(todayTrips.reduce((s, r) => s + (r.distanceKm || r.distance || 0), 0))} km today`,
                                     },
                                     {
                                         label: 'Monthly Trips',
-                                        value: monthTrips.length || monthlySummary.trips,
+                                        value: monthTrips.length,
                                         icon: HiOutlineRefresh,
                                         color: 'from-violet-500 to-violet-600',
                                         desc: `${fmtNum(monthTrips.reduce((s, r) => s + (r.distanceKm || r.distance || 0), 0))} km this month`,
                                     },
                                 ].map(({ label, value, icon: Icon, color, desc }) => (
-                                    <div key={label} className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
-                                        <div className={`bg-linear-to-r ${color} px-5 py-4 flex items-center justify-between`}>
+                                    <div key={label} className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                                        <div className={`bg-gradient-to-r ${color} px-5 py-4 flex items-center justify-between`}>
                                             <p className="text-3xl font-black text-white">{fmtNum(value)}</p>
-                                            <Icon className="text-3xl text-white" />
+                                            <Icon className="text-3xl text-white opacity-80" />
                                         </div>
                                         <div className="px-5 py-3 bg-white">
                                             <p className="text-sm font-bold text-gray-800">{label}</p>
-                                            <p className="text-xs text-gray-400">{desc}</p>
+                                            <p className="text-[10px] text-gray-400 font-medium tracking-tight uppercase mt-0.5">{desc}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -1885,57 +2027,169 @@ const AdminModule = () => {
 
                     {/* ── Trip Assignment ─────────────────────────────────────── */}
                     {section === 'trip-assignment' && (
-                        <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <h3 className="text-base font-extrabold text-gray-900">Trip Assignment Module</h3>
-                                    <p className="text-xs text-gray-500 mt-0.5">Assign driver and assistant for all existing trips, including already taken trips.</p>
+                        <div className="max-w-6xl mx-auto space-y-4">
+                            {/* Header + bulk actions */}
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-base font-extrabold text-gray-900">Trip Assignment Module</h3>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {taActiveTrips.length} active &nbsp;·&nbsp; {taPastTrips.length} past &nbsp;·&nbsp; {trips.length} total trips
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={assignMissingTripCrews}
+                                            disabled={tripMissingAssignSaving}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                        >
+                                            {tripMissingAssignSaving ? 'Assigning…' : 'Auto-assign Missing Crew'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={assignTripsForAllDrivers}
+                                            disabled={tripDriverSpreadSaving}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+                                        >
+                                            {tripDriverSpreadSaving ? 'Assigning…' : 'Spread Across All Drivers'}
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={assignMissingTripCrews}
-                                        disabled={tripMissingAssignSaving}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                                    >
-                                        {tripMissingAssignSaving ? 'Assigning...' : 'Assign Missing Crew For Existing Trips'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={assignTripsForAllDrivers}
-                                        disabled={tripDriverSpreadSaving}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
-                                    >
-                                        {tripDriverSpreadSaving ? 'Assigning...' : 'Assign Trips To All Drivers'}
-                                    </button>
-                                </div>
-                            </div>
 
-                            <div className="p-6">
-                                {trips.length === 0 ? (
-                                    <p className="text-xs text-gray-400 text-center py-8">No trips found to assign.</p>
-                                ) : (
-                                    <div className="space-y-2 max-h-[70vh] overflow-auto pr-1">
-                                        {trips.map((trip) => {
-                                            const draft = tripAssignmentDrafts[trip._id] || {};
-                                            const selectedDriverId = draft.driverId ?? (trip.driverId?._id || trip.driverId || '');
-                                            const selectedAssistantId = draft.assistantId ?? (trip.assistantId?._id || trip.assistantId || '');
-                                            return (
-                                                <div key={trip._id} className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-bold text-gray-900">{trip.source} → {trip.destination}</p>
-                                                        <p className="text-xs text-gray-500 mt-0.5">
-                                                            Lorry: {trip.truckId?.licensePlate || trip.truckId?.truckId || trip.registrationNumber || 'N/A'} • {trip.distance || trip.distanceKm || 0} km • Status: {trip.status || 'scheduled'}
-                                                        </p>
-                                                        <p className="text-xs text-gray-600 mt-0.5">
-                                                            Assigned Driver: <span className="font-semibold text-gray-800">{trip.driverId?.fullName || trip.driverId?.username || 'Unassigned'}</span>
-                                                            {' '}• Assistant: <span className="font-semibold text-gray-800">{trip.assistantId?.fullName || trip.assistantId?.username || 'Unassigned'}</span>
-                                                        </p>
-                                                    </div>
-                                                    <div className="w-full lg:w-auto lg:min-w-85">
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {/* Filters */}
+                                <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap gap-2 items-center bg-white">
+                                    {/* Search */}
+                                    <div className="relative flex-1 min-w-40 max-w-xs">
+                                        <HiOutlineSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search route, truck, driver…"
+                                            value={taSearch}
+                                            onChange={(e) => setTaSearch(e.target.value)}
+                                            className="w-full pl-7 pr-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        />
+                                    </div>
+                                    {/* Truck filter */}
+                                    <select
+                                        value={taTruckFilter}
+                                        onChange={(e) => setTaTruckFilter(e.target.value)}
+                                        className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 max-w-45"
+                                    >
+                                        <option value="all">All Trucks</option>
+                                        {tripsUniqueTrucks.map(({ id, label }) => (
+                                            <option key={id} value={id}>{label}</option>
+                                        ))}
+                                    </select>
+                                    {/* Driver filter */}
+                                    <select
+                                        value={taDriverFilter}
+                                        onChange={(e) => setTaDriverFilter(e.target.value)}
+                                        className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 max-w-40"
+                                    >
+                                        <option value="all">All Drivers</option>
+                                        <option value="">Unassigned</option>
+                                        {drivers.map((d) => (
+                                            <option key={d._id} value={d._id}>{d.fullName || d.username}</option>
+                                        ))}
+                                    </select>
+                                    {/* Status filter */}
+                                    <select
+                                        value={taStatusFilter}
+                                        onChange={(e) => setTaStatusFilter(e.target.value)}
+                                        className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    >
+                                        <option value="all">All Statuses</option>
+                                        <option value="scheduled">Scheduled</option>
+                                        <option value="in_transit">In Transit</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="delayed">Delayed</option>
+                                    </select>
+                                    {/* Clear filters */}
+                                    {(taSearch || taTruckFilter !== 'all' || taDriverFilter !== 'all' || taStatusFilter !== 'all') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTaSearch(''); setTaTruckFilter('all'); setTaDriverFilter('all'); setTaStatusFilter('all'); }}
+                                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                        >
+                                            Clear filters
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Tabs */}
+                                <div className="px-6 pt-3 flex gap-1 border-b border-gray-100">
+                                    {[
+                                        { key: 'active', label: 'Active Trips', count: taActiveTrips.length, color: 'blue' },
+                                        { key: 'past',   label: 'Past Trips',   count: taPastTrips.length,  color: 'gray' },
+                                    ].map(({ key, label, count, color }) => (
+                                        <button
+                                            key={key}
+                                            type="button"
+                                            onClick={() => setTaTab(key)}
+                                            className={`px-4 py-2 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+                                                taTab === key
+                                                    ? 'border-blue-600 text-blue-700 bg-blue-50'
+                                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        >
+                                            {label}
+                                            <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full ${taTab === key ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                                                {count}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Trip list */}
+                                <div className="p-4">
+                                    {taFilteredTrips.length === 0 ? (
+                                        <p className="text-xs text-gray-400 text-center py-10">
+                                            {trips.length === 0 ? 'No trips found.' : 'No trips match the current filters.'}
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-[62vh] overflow-auto pr-1">
+                                            {taFilteredTrips.map((trip) => {
+                                                const draft = tripAssignmentDrafts[trip._id] || {};
+                                                const selectedDriverId    = draft.driverId    ?? (trip.driverId?._id    || trip.driverId    || '');
+                                                const selectedAssistantId = draft.assistantId ?? (trip.assistantId?._id || trip.assistantId || '');
+                                                const selectedTollCount   = draft.tollCount   ?? String(trip.tollCount ?? 0);
+                                                const selectedTollPrice   = draft.tollPrice   ?? String(trip.tollPrice ?? 0);
+                                                const selectedFoodCost    = draft.foodCost    ?? String(trip.foodCost ?? 0);
+                                                const truckLabel = tripTruckLabel(trip);
+                                                const statusColors = {
+                                                    scheduled:  'bg-blue-100 text-blue-700',
+                                                    in_transit: 'bg-amber-100 text-amber-700',
+                                                    completed:  'bg-emerald-100 text-emerald-700',
+                                                    delayed:    'bg-red-100 text-red-700',
+                                                };
+                                                return (
+                                                    <div key={trip._id} className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex flex-col lg:flex-row lg:items-center gap-3">
+                                                        {/* Info */}
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <p className="text-sm font-bold text-gray-900 truncate">{trip.source} → {trip.destination}</p>
+                                                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full shrink-0 ${statusColors[trip.status] || 'bg-gray-100 text-gray-600'}`}>
+                                                                    {trip.status || 'scheduled'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                🚛 <span className="font-semibold text-gray-700">{truckLabel}</span>
+                                                                {' '}· {trip.distanceKm || trip.distance || 0} km
+                                                                {trip.tripStartTime && <span> · {new Date(trip.tripStartTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                Driver: <span className={`font-semibold ${trip.driverId ? 'text-gray-800' : 'text-red-500'}`}>{trip.driverId?.fullName || trip.driverId?.username || 'Unassigned'}</span>
+                                                                {' '}· Asst: <span className={`font-semibold ${trip.assistantId ? 'text-gray-800' : 'text-red-500'}`}>{trip.assistantId?.fullName || trip.assistantId?.username || 'Unassigned'}</span>
+                                                            </p>
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                Current Costs: Toll ₹{fmtNum(Number(trip.tollTotalCost || ((trip.tollCount || 0) * (trip.tollPrice || 0))))} · Food ₹{fmtNum(Number(trip.foodCost || 0))}
+                                                            </p>
+                                                        </div>
+                                                        {/* Selects */}
+                                                        <div className="w-full lg:w-110 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 shrink-0">
                                                             <select
-                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs"
+                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
                                                                 value={selectedDriverId}
                                                                 onChange={(e) => setTripAssignmentField(trip, 'driverId', e.target.value)}
                                                             >
@@ -1945,7 +2199,7 @@ const AdminModule = () => {
                                                                 ))}
                                                             </select>
                                                             <select
-                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs"
+                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
                                                                 value={selectedAssistantId}
                                                                 onChange={(e) => setTripAssignmentField(trip, 'assistantId', e.target.value)}
                                                             >
@@ -1954,23 +2208,49 @@ const AdminModule = () => {
                                                                     <option key={a._id} value={a._id}>{a.fullName || a.username} ({a.role})</option>
                                                                 ))}
                                                             </select>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="1"
+                                                                value={selectedTollCount}
+                                                                onChange={(e) => setTripAssignmentField(trip, 'tollCount', e.target.value)}
+                                                                placeholder="Toll Count"
+                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                            />
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                value={selectedTollPrice}
+                                                                onChange={(e) => setTripAssignmentField(trip, 'tollPrice', e.target.value)}
+                                                                placeholder="Toll Price"
+                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                            />
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                value={selectedFoodCost}
+                                                                onChange={(e) => setTripAssignmentField(trip, 'foodCost', e.target.value)}
+                                                                placeholder="Food Cost"
+                                                                className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                            />
                                                         </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                                                        {/* Save */}
                                                         <button
                                                             type="button"
                                                             onClick={() => saveTripAssignment(trip)}
                                                             disabled={tripAssignmentSavingId === trip._id}
-                                                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                                            className="shrink-0 self-end lg:self-center px-3 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                                                         >
-                                                            {tripAssignmentSavingId === trip._id ? 'Saving...' : 'Save Crew'}
+                                                            {tripAssignmentSavingId === trip._id ? 'Saving…' : 'Save'}
                                                         </button>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -2187,6 +2467,287 @@ const AdminModule = () => {
                         </div>
                     )}
 
+                    {/* ── Add Salary ────────────────────────────────────────────── */}
+                    {section === 'add-salary' && (
+                        <div className="max-w-5xl mx-auto bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                                <h3 className="text-base font-extrabold text-gray-900">Driver & Assistant Pay Assignment</h3>
+                                <p className="text-xs text-gray-500 mt-0.5">Assign pay per trip. Driver gets 15%, assistant gets 4% of driver share.</p>
+                            </div>
+
+                            <div className="p-6 space-y-5">
+                                {message && (
+                                    <div className={`px-4 py-2 rounded-lg border text-xs font-medium ${
+                                        message.includes('Error') || message.includes('Failed')
+                                            ? 'bg-red-50 border-red-200 text-red-700'
+                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                    }`}>
+                                        {message}
+                                    </div>
+                                )}
+
+                                {/* Trip Search Section */}
+                                <div className="rounded-xl border border-blue-200 overflow-hidden">
+                                    <SectionBadge color="blue" letter="A" title="Search & Filter Trips" subtitle="Find trips by date range, location, or driver" />
+                                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                                        <Field label="From Date">
+                                            <input
+                                                type="date"
+                                                className={inputCls}
+                                                value={tripSearchFilters?.dateFrom || ''}
+                                                onChange={(e) => {
+                                                    setTripSearchFilters((p) => ({ ...p, dateFrom: e.target.value }));
+                                                }}
+                                            />
+                                        </Field>
+                                        <Field label="To Date">
+                                            <input
+                                                type="date"
+                                                className={inputCls}
+                                                value={tripSearchFilters?.dateTo || ''}
+                                                onChange={(e) => {
+                                                    setTripSearchFilters((p) => ({ ...p, dateTo: e.target.value }));
+                                                }}
+                                            />
+                                        </Field>
+                                        <Field label="Source Location">
+                                            <input
+                                                type="text"
+                                                className={inputCls}
+                                                placeholder="e.g. Chennai"
+                                                value={tripSearchFilters?.source || ''}
+                                                onChange={(e) => {
+                                                    setTripSearchFilters((p) => ({ ...p, source: e.target.value }));
+                                                }}
+                                            />
+                                        </Field>
+                                        <Field label="Destination Location">
+                                            <input
+                                                type="text"
+                                                className={inputCls}
+                                                placeholder="e.g. Coimbatore"
+                                                value={tripSearchFilters?.destination || ''}
+                                                onChange={(e) => {
+                                                    setTripSearchFilters((p) => ({ ...p, destination: e.target.value }));
+                                                }}
+                                            />
+                                        </Field>
+                                        <Field label="Driver">
+                                            <select
+                                                className={inputCls}
+                                                value={tripSearchFilters?.driverId || ''}
+                                                onChange={(e) => {
+                                                    setTripSearchFilters((p) => ({ ...p, driverId: e.target.value }));
+                                                }}
+                                            >
+                                                <option value="">All Drivers</option>
+                                                {drivers.map((d) => <option key={d._id} value={d._id}>{d.username}</option>)}
+                                            </select>
+                                        </Field>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-green-200 overflow-hidden">
+                                    <SectionBadge color="green" letter="B" title="Step 1: Select This Trip" subtitle={`${filteredTripsForSalary.length} valid trip${filteredTripsForSalary.length !== 1 ? 's' : ''} found with full crew`} />
+                                    <div className="p-4 max-h-60 overflow-y-auto space-y-2">
+                                        {filteredTripsForSalary.length === 0 ? (
+                                            <p className="text-xs text-gray-500">No trips found. Adjust your filters.</p>
+                                        ) : (
+                                            filteredTripsForSalary.slice(0, 20).map((trip) => (
+                                                <div
+                                                    key={trip._id}
+                                                    onClick={() => {
+                                                        setSalaryForm((p) => ({
+                                                            ...p,
+                                                            selectedTripId: trip._id,
+                                                            driverId: trip.driverId?._id || '',
+                                                            assistantId: trip.assistantId?._id || '',
+                                                        }));
+                                                    }}
+                                                    className={`p-3 rounded-lg cursor-pointer border transition-all ${
+                                                        salaryForm.selectedTripId === trip._id
+                                                            ? 'border-emerald-500 bg-emerald-50'
+                                                            : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-gray-400 mb-1">{fmtDate(trip.tripStartTime || trip.createdAt)}</p>
+                                                            <p className="text-xs font-bold text-gray-800">🚛 {tripTruckLabel(trip)} &nbsp;|&nbsp; {trip.source} → {trip.destination}</p>
+                                                            <p className="text-[10px] text-gray-600 mt-1">
+                                                                Driver: {trip.driverId?.fullName || trip.driverId?.username} &nbsp;·&nbsp; Asst: {trip.assistantId?.fullName || trip.assistantId?.username}
+                                                            </p>
+                                                        </div>
+                                                        {salaryForm.selectedTripId === trip._id && (
+                                                            <span className="text-xs font-bold text-emerald-600">✓ Selected</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Salary Form */}
+                                <div className="rounded-xl border border-orange-200 overflow-hidden">
+                                    <SectionBadge color="orange" letter="C" title="Step 2: Enter Pay Details" subtitle="Enter total trip value to calculate shares" />
+                                    <div className="p-4 space-y-4">
+                                        {salaryForm.selectedTripId && (
+                                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                                <p className="text-xs font-bold text-blue-700 mb-2">Selected Trip Details</p>
+                                                {(() => {
+                                                    const trip = trips.find((t) => t._id === salaryForm.selectedTripId);
+                                                    return trip ? (
+                                                        <div className="space-y-1 text-xs text-blue-600">
+                                                            <p><span className="font-bold">Route:</span> {trip.source} → {trip.destination}</p>
+                                                            <p><span className="font-bold">Driver:</span> {trip.driverId?.username || 'N/A'} | <span className="font-bold">Assistant:</span> {trip.assistantId?.username || 'N/A'}</p>
+                                                            <p><span className="font-bold">Date:</span> {fmtDate(trip.tripStartTime || trip.createdAt)}</p>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                            </div>
+                                        )}
+                                        
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                            <Field label="Total Amount Received (₹) *">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    className={inputCls}
+                                                    placeholder="e.g. 5000"
+                                                    value={salaryForm.totalAmountReceived || ''}
+                                                    onChange={(e) => setSalaryForm((p) => ({ ...p, totalAmountReceived: e.target.value }))}
+                                                    required
+                                                />
+                                            </Field>
+                                            <Field label="Salary Date">
+                                                <input
+                                                    type="date"
+                                                    className={inputCls}
+                                                    value={salaryForm.salaryDate || new Date().toISOString().split('T')[0]}
+                                                    onChange={(e) => setSalaryForm((p) => ({ ...p, salaryDate: e.target.value }))}
+                                                />
+                                            </Field>
+                                            <Field label="Notes">
+                                                <input
+                                                    type="text"
+                                                    className={inputCls}
+                                                    placeholder="e.g. Bonus for good performance"
+                                                    value={salaryForm.notes || ''}
+                                                    onChange={(e) => setSalaryForm((p) => ({ ...p, notes: e.target.value }))}
+                                                />
+                                            </Field>
+                                        </div>
+
+                                        {/* Calculated Shares */}
+                                        {salaryForm.totalAmountReceived && (
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                                <div className="bg-gradient-to-br from-amber-50 to-amber-50 border border-amber-200 rounded-lg p-3">
+                                                    <p className="text-[10px] text-amber-600 font-semibold uppercase">Total Amount</p>
+                                                    <p className="text-lg font-extrabold text-amber-700 mt-1">₹ {fmtNum(Number(salaryForm.totalAmountReceived).toFixed(2))}</p>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-emerald-50 to-emerald-50 border border-emerald-200 rounded-lg p-3">
+                                                    <p className="text-[10px] text-emerald-600 font-semibold uppercase">Driver Share (15%)</p>
+                                                    <p className="text-lg font-extrabold text-emerald-700 mt-1">₹ {fmtNum((Number(salaryForm.totalAmountReceived) * 0.15).toFixed(2))}</p>
+                                                </div>
+                                                <div className="bg-gradient-to-br from-orange-50 to-orange-50 border border-orange-200 rounded-lg p-3">
+                                                    <p className="text-[10px] text-orange-600 font-semibold uppercase">Assistant (4% of driver)</p>
+                                                    <p className="text-lg font-extrabold text-orange-700 mt-1">₹ {fmtNum((Number(salaryForm.totalAmountReceived) * 0.15 * 0.04).toFixed(2))}</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    setSaving(true);
+                                                    setMessage('');
+
+                                                    if (!salaryForm.selectedTripId) {
+                                                        setMessage('Error: Please select a trip');
+                                                        setSaving(false);
+                                                        return;
+                                                    }
+
+                                                    if (!salaryForm.totalAmountReceived || Number(salaryForm.totalAmountReceived) <= 0) {
+                                                        setMessage('Error: Please enter a valid amount');
+                                                        setSaving(false);
+                                                        return;
+                                                    }
+
+                                                    const selectedTrip = trips.find((t) => t._id === salaryForm.selectedTripId);
+                                                    if (!selectedTrip) {
+                                                        setMessage('Error: Trip not found');
+                                                        setSaving(false);
+                                                        return;
+                                                    }
+
+                                                    const res = await salaryAPI.assignSalary({
+                                                        tripId: salaryForm.selectedTripId,
+                                                        driverId: selectedTrip.driverId?._id,
+                                                        assistantId: selectedTrip.assistantId?._id,
+                                                        totalAmountReceived: Number(salaryForm.totalAmountReceived),
+                                                        salaryDate: salaryForm.salaryDate || new Date().toISOString().split('T')[0],
+                                                        notes: salaryForm.notes,
+                                                    });
+
+                                                    setMessage('Salary assigned successfully!');
+                                                    if (res.data?.salary) setAssignedSalaries(prev => [res.data.salary, ...prev]);
+                                                    setSalaryForm({ selectedTripId: '', driverId: '', assistantId: '', totalAmountReceived: '', salaryDate: new Date().toISOString().split('T')[0], notes: '' });
+                                                    setTimeout(() => setMessage(''), 5000);
+                                                    refreshAll();
+                                                } catch (err) {
+                                                    console.error('Failed to assign salary', err);
+                                                    setMessage(`Error: ${err.response?.data?.message || 'Failed to assign salary'}`);
+                                                } finally {
+                                                    setSaving(false);
+                                                }
+                                            }}
+                                            disabled={saving || !salaryForm.selectedTripId || !salaryForm.totalAmountReceived}
+                                            className="w-full py-3 text-sm font-extrabold rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 shadow-md disabled:opacity-60 tracking-wide"
+                                        >
+                                            {saving ? 'Assigning Salary...' : 'Assign Salary'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Assigned Salaries History */}
+                                <div className="rounded-xl border border-blue-200 overflow-hidden">
+                                    <SectionBadge color="blue" letter="D" title="Already Assigned Pay" subtitle={`Most recent ${assignedSalaries.length} records`} />
+                                    <div className="p-4 max-h-80 overflow-y-auto space-y-3">
+                                        {assignedSalaries.length === 0 ? (
+                                            <p className="text-xs text-gray-500 italic">No salary assignments in history yet.</p>
+                                        ) : assignedSalaries.map((s) => (
+                                            <div key={s._id} className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 flex items-center justify-between gap-4">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">{fmtDate(s.salaryDate)}</p>
+                                                        <span className="w-1 h-1 rounded-full bg-blue-200" />
+                                                        <p className="text-[10px] font-bold text-gray-400">Truck: {s.tripId?.truckId?.licensePlate || s.tripId?.registrationNumber || 'N/A'}</p>
+                                                    </div>
+                                                    <p className="text-xs font-bold text-gray-800 truncate">{s.tripId?.source} → {s.tripId?.destination}</p>
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 pt-1.5 border-t border-blue-100/50">
+                                                        <p className="text-[11px] text-gray-600">
+                                                            <span className="font-semibold text-gray-900">Driver Share:</span> ₹{s.driverShare?.toLocaleString()}
+                                                        </p>
+                                                        <p className="text-[11px] text-gray-600">
+                                                            <span className="font-semibold text-gray-900">Asst Share:</span> ₹{s.assistantShare?.toLocaleString()}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] text-gray-400 uppercase font-bold">Trip Value</p>
+                                                    <p className="text-sm font-black text-blue-700">₹{s.totalAmountReceived?.toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── People Directory ───────────────────────────────────────── */}
                     {section === 'people' && (
                         <div>
@@ -2216,7 +2777,7 @@ const AdminModule = () => {
                                     <HiOutlineDocumentDownload className="text-base" /> All Personnel Report
                                 </button>
                             </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {peopleCard('Drivers', drivers)}
                                 {peopleCard('Assistants', assistants)}
                             </div>
@@ -2242,16 +2803,16 @@ const AdminModule = () => {
                                         <tbody>
                                             {[...drivers, ...assistants].map((person) => {
                                                 const tripCount = assignedTripsForUser(person).length;
-                                                const tripCost = assignedCostForUser(person);
+                                                const earnings = assignedEarningsForUser(person);
                                                 const salary = Number(person.monthlySalary || 0);
-                                                const total = tripCost + salary;
+                                                const total = earnings + salary;
                                                 return (
                                                     <tr key={person._id} className="border-b border-gray-50 text-gray-700 hover:bg-gray-50">
                                                         <td className="py-2 px-3 font-semibold">{person.fullName || person.username}</td>
                                                         <td className="py-2 px-3 capitalize">{person.role}</td>
                                                         <td className="py-2 px-3">{person.phone || '—'}</td>
                                                         <td className="py-2 px-3">{tripCount}</td>
-                                                        <td className="py-2 px-3">Rs.{fmtNum(tripCost, 0)}</td>
+                                                        <td className="py-2 px-3">Rs.{fmtNum(earnings, 0)}</td>
                                                         <td className="py-2 px-3">Rs.{fmtNum(salary, 0)}</td>
                                                         <td className="py-2 px-3 font-bold">Rs.{fmtNum(total, 0)}</td>
                                                     </tr>

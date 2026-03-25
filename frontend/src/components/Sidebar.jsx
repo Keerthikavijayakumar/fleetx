@@ -3,28 +3,36 @@ import { useAuth } from '../context/AuthContext';
 import {
     HiOutlineViewGrid, HiOutlineTruck,
     HiOutlineKey, HiOutlineCog,
-    HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineBeaker,
+    HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlineBeaker, HiOutlineClipboardList,
+    HiX
 } from 'react-icons/hi';
 
 const allNavItems = [
     { path: '/', icon: HiOutlineViewGrid, label: 'Overview', roles: ['admin', 'assistant', 'driver'] },
     { path: '/admin', icon: HiOutlineCog, label: 'Admin Module', roles: ['admin'] },
     { path: '/telemetry', icon: HiOutlineBeaker, label: 'Fleet Intelligence', roles: ['admin', 'assistant'] },
+    { path: '/trips', icon: HiOutlineClipboardList, label: 'Trips', roles: ['admin', 'assistant'] },
     { path: '/fleet', icon: HiOutlineTruck, label: 'Fleet', roles: ['admin'] },
     { path: '/maintenance', icon: HiOutlineKey, label: 'Maintenance', roles: ['admin'] },
     { path: '/my-truck', icon: HiOutlineTruck, label: 'Driver Details', roles: ['driver'] },
     { path: '/settings', icon: HiOutlineCog, label: 'Settings', roles: ['admin'] },
 ];
 
-const Sidebar = ({ collapsed, onToggle }) => {
+const Sidebar = ({ collapsed, onToggle, mobileOpen, setMobileOpen }) => {
     const { user } = useAuth();
     const role = user?.role || 'admin';
     const navItems = allNavItems.filter(item => item.roles.includes(role));
 
+    const handleNavClick = () => {
+        if (window.innerWidth <= 768) {
+            setMobileOpen(false);
+        }
+    };
+
     return (
-        <aside className="sidebar bg-white border-r border-gray-100 flex flex-col z-50 transition-all duration-300 ease-in-out overflow-y-auto">
+        <aside className={`sidebar bg-white border-r border-gray-100 flex flex-col z-50 transition-all duration-300 ease-in-out overflow-y-auto ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
             {/* Logo */}
-            <div className="h-16 flex items-center px-4 border-b border-gray-50">
+            <div className="h-16 flex items-center justify-between px-4 border-b border-gray-50">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center flex-shrink-0 shadow-md shadow-red-500/15">
                         <HiOutlineTruck className="text-white text-[17px]" />
@@ -36,6 +44,13 @@ const Sidebar = ({ collapsed, onToggle }) => {
                         </div>
                     )}
                 </div>
+                {/* Mobile Close Button */}
+                <button 
+                    onClick={() => setMobileOpen(false)}
+                    className="md:hidden p-1.5 rounded-lg text-gray-400 hover:bg-gray-50 transition-colors"
+                >
+                    <HiX className="text-xl" />
+                </button>
             </div>
 
             {/* Navigation */}
@@ -48,6 +63,7 @@ const Sidebar = ({ collapsed, onToggle }) => {
                             to={item.path}
                             end={item.path === '/'}
                             title={collapsed ? item.label : ''}
+                            onClick={handleNavClick}
                             className={({ isActive }) =>
                                 `group flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-[13px] font-medium transition-all duration-200 ${isActive
                                     ? 'bg-gradient-to-r from-rose-50 to-red-50 text-rose-600 shadow-sm shadow-rose-500/5'

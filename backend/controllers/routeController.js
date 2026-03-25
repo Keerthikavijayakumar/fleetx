@@ -12,6 +12,7 @@ exports.planRoute = async (req, res, next) => {
 exports.getAllRoutes = async (req, res, next) => {
     try {
         const routes = await routeService.getAllRoutes();
+        console.log(`[DEBUG] getAllRoutes: returning ${routes.length} routes`);
         res.json(routes);
     } catch (error) {
         next(error);

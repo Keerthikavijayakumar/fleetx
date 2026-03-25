@@ -506,7 +506,17 @@ async function runIAlertCsvSync({ reason = 'manual', forceFullSync = false, expl
             const trips = deriveTrips(truckRows);
             const truck = truckMap.get(reg);
 
-            trips.forEach((trip) => {
+            // Stitching Logic: Group trips that happen within 4 hours of each other
+            let currentMasterId = null;
+            let lastEndTime = null;
+
+            trips.forEach((trip, index) => {
+                if (!lastEndTime || (trip.start.timestamp - lastEndTime) / 3600000 >= 4) {
+                    currentMasterId = `MT-${reg}-${trip.start.timestamp.getTime()}`;
+                }
+                trip.masterTripId = currentMasterId;
+                lastEndTime = trip.end.timestamp;
+
                 const distance = Math.max(0, (trip.end.odometerKm || 0) - (trip.start.odometerKm || 0));
                 const fuelConsumed = Math.max(0, (trip.end.fuelConsumption || 0) - (trip.start.fuelConsumption || 0));
                 const durationMin = Math.max(1, Math.round((trip.end.timestamp - trip.start.timestamp) / 60000));
@@ -537,6 +547,7 @@ async function runIAlertCsvSync({ reason = 'manual', forceFullSync = false, expl
                                 tripEndTime: trip.end.timestamp,
                                 sourceSystem: 'ialert_csv',
                                 externalTripKey,
+                                masterTripId: trip.masterTripId,
                                 startLatitude: trip.start.latitude,
                                 startLongitude: trip.start.longitude,
                                 endLatitude: trip.end.latitude,

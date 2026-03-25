@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { routesAPI, trucksAPI } from '../services/api';
+import { routesAPI, trucksAPI, telemetryAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { HiOutlineArrowLeft, HiOutlineDocumentText, HiOutlineDocumentDownload } from 'react-icons/hi';
+import { HiOutlineArrowLeft, HiOutlineDocumentText, HiOutlineDocumentDownload, HiChevronDown, HiChevronUp } from 'react-icons/hi';
 import { generateLorryReport } from '../services/reportGenerator';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,7 +87,9 @@ const TruckDetail = () => {
 
     const [truck, setTruck]   = useState(null);
     const [trips, setTrips]   = useState([]);
+    const [stitchedTrips, setStitchedTrips] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [expandedMaster, setExpandedMaster] = useState({});
     const [error,   setError]   = useState('');
     const [isEditing, setIsEditing] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
@@ -155,16 +157,16 @@ const TruckDetail = () => {
                     trucksAPI.getById(id),
                     routesAPI.getAll(),
                 ]);
-                setTruck(truckRes.data);
-                setEditForm(mapTruckToForm(truckRes.data));
-                const all = tripsRes.data || [];
                 const truckData = truckRes.data;
+                setTruck(truckData);
+                setEditForm(mapTruckToForm(truckData));
+
+                const all = tripsRes.data || [];
                 const truckStrId   = truckData?.truckId   || '';
                 const truckPlate   = truckData?.licensePlate || '';
                 const normalize    = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
-                // Match trips by Mongoose ObjectId OR by registrationNumber (CSV-ingested trips
-                // only store a string registration, not the ObjectId ref).
-                setTrips(all.filter((trip) => {
+                
+                const filteredTrips = all.filter((trip) => {
                     const tid = trip.truckId?._id || trip.truckId;
                     if (tid && String(tid) === String(id)) return true;
                     const reg = trip.registrationNumber || '';
@@ -174,7 +176,16 @@ const TruckDetail = () => {
                         normReg === normalize(truckStrId) ||
                         normReg === normalize(truckPlate)
                     );
-                }));
+                });
+                setTrips(filteredTrips);
+
+                // Fetch Stitched Trips
+                try {
+                    const stitchedRes = await telemetryAPI.stitchedTrips({ registrationNumber: truckPlate || truckStrId });
+                    setStitchedTrips(stitchedRes.data || []);
+                } catch (err) {
+                    console.error('Failed to load stitched trips:', err);
+                }
             } catch (err) {
                 setError('Failed to load lorry details.');
                 console.error(err);
@@ -535,10 +546,75 @@ const TruckDetail = () => {
                 </div>
             </div>
 
-            {/* ── Trip History ──────────────────────────────────────────── */}
+            {/* ── Stitched Trips (Complete KM Run) ─────────────────────────── */}
+            <div className="card p-5 mb-5 bg-blue-50/30 border-blue-100">
+                <h2 className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                    Complete Trip Analysis (Master Trips)
+                </h2>
+                {stitchedTrips.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-4 text-center">No complete trip data available yet.</p>
+                ) : (
+                    <div className="space-y-3">
+                        {stitchedTrips.map((mt) => (
+                            <div key={mt.masterTripId} className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
+                                <div className="p-4 flex flex-wrap items-center justify-between gap-4">
+                                    <div className="flex-1 min-w-[200px]">
+                                        <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Trip Journey</p>
+                                        <p className="text-sm font-bold text-gray-900 line-clamp-1">{mt.source} → {mt.destination}</p>
+                                        <p className="text-xs text-gray-500 mt-1">{fmtDate(mt.startTime)} to {fmtDate(mt.endTime)}</p>
+                                    </div>
+                                    <div className="flex gap-4 text-center">
+                                        <div>
+                                            <p className="text-[10px] text-gray-400 uppercase">Total KM</p>
+                                            <p className="text-sm font-extrabold text-blue-600">{Number(mt.totalDistanceKm).toFixed(1)} km</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] text-gray-400 uppercase">Segments</p>
+                                            <p className="text-sm font-extrabold text-gray-700">{mt.segments?.length || 0}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] text-gray-400 uppercase">Duration</p>
+                                            <p className="text-sm font-extrabold text-gray-700">{Math.floor(mt.durationMinutes / 60)}h {mt.durationMinutes % 60}m</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setExpandedMaster(prev => ({ ...prev, [mt.masterTripId]: !prev[mt.masterTripId] }))}
+                                        className="p-2 hover:bg-blue-50 rounded-full transition-colors"
+                                    >
+                                        {expandedMaster[mt.masterTripId] ? <HiChevronUp className="text-blue-500" /> : <HiChevronDown className="text-blue-500" />}
+                                    </button>
+                                </div>
+                                
+                                {expandedMaster[mt.masterTripId] && (
+                                    <div className="px-4 pb-4 border-t border-blue-50 bg-blue-50/20">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase mt-3 mb-2">Individual Segments</p>
+                                        <div className="space-y-2">
+                                            {mt.segments.map((seg, sIdx) => (
+                                                <div key={seg._id} className="flex items-center justify-between p-2 bg-white rounded-lg text-[11px] border border-blue-50/50">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="w-5 h-5 flex items-center justify-center bg-gray-100 rounded-full text-[9px] font-bold text-gray-500">{sIdx + 1}</span>
+                                                        <span className="font-semibold text-gray-700">{seg.source} → {seg.destination}</span>
+                                                    </div>
+                                                    <div className="flex gap-4">
+                                                        <span className="text-gray-500">{fmtDateTime(seg.tripStartTime)}</span>
+                                                        <span className="font-bold text-blue-500">{seg.distance} km</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* ── Trip History (Raw Segments) ──────────────────────────────────────────── */}
             <div className="card p-5 mb-8">
                 <h2 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">
-                    Trip History ({trips.length} trip{trips.length !== 1 ? 's' : ''})
+                    Recent Activity (All Segments)
                 </h2>
                 {trips.length === 0 ? (
                     <p className="text-xs text-gray-400 py-4 text-center">No trips recorded for this lorry yet.</p>

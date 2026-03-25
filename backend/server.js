@@ -19,6 +19,7 @@ const { router: driverRoutes, setIO: setDriverIO } = require('./routes/driverRou
 const adminSyncRoutes = require('./routes/adminSyncRoutes');
 const telemetryRoutes = require('./routes/telemetryRoutes');
 const alertRoutes = require('./routes/alertRoutes');
+const salaryRoutes = require('./routes/salaryRoutes');
 const { initializeSchedulers, triggerStartupBootstrap } = require('./services/scheduler');
 
 const app = express();
@@ -57,6 +58,7 @@ app.use('/api/emergency', require('./routes/emergencyRoutes')(io));
 app.use('/api/admin/sync', adminSyncRoutes);
 app.use('/api/telemetry', telemetryRoutes);
 app.use('/api/alerts', alertRoutes);
+app.use('/api/salary', salaryRoutes);
 
 // Serve uploaded permit documents
 const path = require('path');
@@ -86,7 +88,7 @@ const startServer = async () => {
     try {
         await connectDB();
 
-        initializeSimulation(io);
+        // initializeSimulation(io);
         initializeSchedulers();
 
         server.listen(PORT, () => {
